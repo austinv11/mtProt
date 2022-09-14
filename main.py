@@ -6,6 +6,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Learning
     DeviceStatsMonitor
 from pytorch_lightning.loggers import WandbLogger
 
+from datasets import UkBioBankDataModule
 from models import MtEncoder
 
 sweep_config = {
@@ -22,13 +23,54 @@ sweep_config = {
         'stochastic_weight_averaging': {
             'parameters': {
                 'enabled': {
-                    'values': [True, False],
+                    'values': [0, 1],
                 },
                 'swa_lr': {
                     'min': 0.0001,
                     'max': 0.1,
                 }
             }
+        },
+        'optimizer': {
+            'values': ['adam', 'sgd', 'adamw', 'adamax', 'radam', 'rmsprop'],
+        },
+        'learning_rate': {
+            'min': 0.00001,
+            'max': 0.1,
+        },
+        'momentum': {
+            'values': [0.0, 0.9, 0.99],
+        },
+        'weight_decay': {
+            'min': 0.0,
+            'max': 0.1
+        },
+        'amsgrad': {
+            'values': [0, 1],
+        },
+        'num_layers': {
+            'values': [1, 2, 3],
+        },
+        'max_layer_size': {
+            'values': [64, 128, 256],
+        },
+        'latent_size': {
+            'distribution': 'int_uniform',
+            'min': 3,
+            'max': 64,
+        },
+        'activation': {
+            'values': ['relu', 'leaky_relu', 'gelu', 'selu'],
+        },
+        'autoencoder_type': {
+            'values': [
+                'vanilla',  # Standard
+                'sparse',  # See Goodfellow et al. 2016, forces sparsity in the latent space to make features more interpretable
+                # See also https://web.stanford.edu/class/cs294a/sparseAutoencoder.pdf
+                'contractive',  # See Goodfellow et al 2016, forces the latent space to be smooth to make features more interpretable
+                # See also https://wiseodd.github.io/techblog/2016/12/05/contractive-autoencoder/
+                'concrete',  # https://arxiv.org/abs/1901.09346  method for unsupervised feature selection
+            ],
         }
     }
 }
@@ -72,6 +114,10 @@ def run_model(
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(wandb.config.stochastic_weight_averaging.swa_lr))
 
+    uk_biobank = UkBioBankDataModule()
+    uk_biobank.prepare_data()
+    uk_biobank.setup(stage='fit')
+
     trainer = Trainer(
         logger=wandb_logger,
         accelerator=accelerator,
@@ -86,25 +132,39 @@ def run_model(
     )
 
     model = MtEncoder(
-
+        num_features=uk_biobank.num_features,
+        feature_names=uk_biobank.feature_names,
     )
 
     wandb_logger.watch(model, log='all')
 
-    trainer.fit(model, train_dataloaders=None, val_dataloaders=None)
+    trainer.fit(model, datamodule=uk_biobank)
 
     print("=====TRAINING COMPLETED=====")
     print(f"Best model: {checkpoint_callback.best_model_path}")
     print(f"Best model val_loss: {checkpoint_callback.best_model_score}")
 
     print("=====TESTING=====")
-    trainer.test(ckpt_path="best", dataloaders=get_sequence_loader(DatasetMode.TEST, window_size=window_size))
+    uk_biobank.setup(stage='test')
+    trainer.test(ckpt_path="best", datamodule=uk_biobank)
 
 
 def sweep_func():
     wandb.init()
+
+    # Sanity check configuration for mutually exclusive parameters
+    optimizer = wandb.config.optimizer
+    if optimizer not in ('sgd', 'rmsprop'):
+        wandb.config.momentum = 0.0
+
+    if optimizer not in ('adam', 'adamw'):
+        wandb.config.amsgrad = 0
+
+    if wandb.config.stochastic_weight_averaging.enabled == 0:
+        wandb.config.stochastic_weight_averaging.swa_lr = 0.0
+
     run_model(
-        stochastic_weight_averaging=wandb.config.stochastic_weight_averaging.enabled,
+        stochastic_weight_averaging=wandb.config.stochastic_weight_averaging.enabled == 1,
         use_wandb=True
     )
 
