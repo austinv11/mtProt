@@ -92,7 +92,7 @@ def run_model(
         callbacks=callbacks,
         gradient_clip_val=1.0,
         detect_anomaly=True,
-        fast_dev_run=True,
+        fast_dev_run=False,
     )
 
     model = MtEncoder(
