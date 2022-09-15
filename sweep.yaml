@@ -14,7 +14,7 @@ metric:
 
 early_terminate:
   type: hyperband
-  max_iter: 3
+  min_iter: 3
 
 parameters:
 
