@@ -1,0 +1,74 @@
+program: main.py
+
+entity: wcm-austin
+project: mtProt
+
+name: mtProt
+
+# TODO: Bayes
+method: random
+
+metric:
+  name: val_loss
+  goal: minimize
+
+early_terminate:
+  type: hyperband
+  max_iter: 3
+
+parameters:
+
+  stochastic_weight_averaging:
+    parameters:
+      enabled:
+        values: [0, 1]
+      swa_lr:
+        min: 0.0001
+        max: 0.1
+
+  optimizer:
+    values: ['adam', 'sgd', 'adamw', 'adamax', 'radam', 'rmsprop']
+
+  learning_rate:
+    min: 0.0001
+    max: 0.1
+
+  momentum:
+    values: [0.0, 0.9, 0.99]
+
+  weight_decay:
+    min: 0.0
+    max: 0.1
+
+  amsgrad:
+    values: [0, 1]
+
+  num_layers:
+    values: [1, 2, 3]
+
+  max_layer_size:
+    values: [64, 128, 256]
+
+  latent_size:
+    distribution: 'int_uniform'
+    min: 3
+    max: 64
+
+  activation:
+    values: ['relu', 'leaky_relu', 'gelu', 'selu']
+
+  autoencoder_type:
+    values: [
+            'vanilla',  # Standard
+            'sparse',  # See Goodfellow et al. 2016, forces sparsity in the latent space to make features more interpretable
+            # See also https://web.stanford.edu/class/cs294a/sparseAutoencoder.pdf
+            'contractive',  # See Goodfellow et al 2016, forces the latent space to be smooth to make features more interpretable
+            # See also https://wiseodd.github.io/techblog/2016/12/05/contractive-autoencoder/
+            'concrete',  # https://arxiv.org/abs/1901.09346  method for unsupervised feature selection
+            ]
+
+  dropout:
+    values: [0.0, 0.1, 0.2, 0.3, 0.4]
+
+  corruption_prob:
+    values: [0.0, 0.1, 0.2, 0.3, 0.4]

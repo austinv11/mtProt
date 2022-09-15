@@ -9,76 +9,43 @@ from pytorch_lightning.loggers import WandbLogger
 from datasets import UkBioBankDataModule
 from models import MtEncoder
 
-sweep_config = {
-    'method': 'random',  # bayes
-    "metric": {
-        "name": "val_loss",
-        "goal": "minimize"
-    },
-    'early_terminate': {
-        'type': 'hyperband',
-        'min_iter': 3,
-    },
-    'parameters': {
-        'stochastic_weight_averaging': {
-            'parameters': {
-                'enabled': {
-                    'values': [0, 1],
-                },
-                'swa_lr': {
-                    'min': 0.0001,
-                    'max': 0.1,
-                }
-            }
-        },
-        'optimizer': {
-            'values': ['adam', 'sgd', 'adamw', 'adamax', 'radam', 'rmsprop'],
-        },
-        'learning_rate': {
-            'min': 0.00001,
-            'max': 0.1,
-        },
-        'momentum': {
-            'values': [0.0, 0.9, 0.99],
-        },
-        'weight_decay': {
-            'min': 0.0,
-            'max': 0.1
-        },
-        'amsgrad': {
-            'values': [0, 1],
-        },
-        'num_layers': {
-            'values': [1, 2, 3],
-        },
-        'max_layer_size': {
-            'values': [64, 128, 256],
-        },
-        'latent_size': {
-            'distribution': 'int_uniform',
-            'min': 3,
-            'max': 64,
-        },
-        'activation': {
-            'values': ['relu', 'leaky_relu', 'gelu', 'selu'],
-        },
-        'autoencoder_type': {
-            'values': [
-                'vanilla',  # Standard
-                'sparse',  # See Goodfellow et al. 2016, forces sparsity in the latent space to make features more interpretable
-                # See also https://web.stanford.edu/class/cs294a/sparseAutoencoder.pdf
-                'contractive',  # See Goodfellow et al 2016, forces the latent space to be smooth to make features more interpretable
-                # See also https://wiseodd.github.io/techblog/2016/12/05/contractive-autoencoder/
-                'concrete',  # https://arxiv.org/abs/1901.09346  method for unsupervised feature selection
-            ],
-        }
-    }
-}
+default_config = dict(
+    stochastic_weight_averaging=dict(
+        enabled=1,
+        swa_lr=0.05,
+    ),
+    optimizer='adam',
+    learning_rate=0.001,
+    weight_decay=0.0,
+    momentum=0.9,
+    amsgrad=0,
+    num_layers=2,
+    hidden_size=64,
+    dropout=0.0,
+    corruption_prob=0.0,
+    max_layer_size=64,
+    latent_size=32,
+    activation='relu',
+    autoencoder_type='vanilla'
+)
 sweep = True
 
 
 def run_model(
+        latent_size=32,
         stochastic_weight_averaging=False,
+        swa_lr=0.05,
+        optimizer='adam',
+        learning_rate=0.001,
+        momentum=0.9,
+        amsgrad=False,
+        weight_decay=0.0,
+        num_layers=2,
+        max_layer_size=64,
+        activation='relu',
+        autoencoder_type='vanilla',
+        dropout=0.0,
+        corruption_prob=0.0,
 
         use_wandb=False,
         accelerator='cpu'
@@ -112,7 +79,7 @@ def run_model(
     ]
 
     if stochastic_weight_averaging:
-        callbacks.append(StochasticWeightAveraging(wandb.config.stochastic_weight_averaging.swa_lr))
+        callbacks.append(StochasticWeightAveraging(swa_lr))
 
     uk_biobank = UkBioBankDataModule()
     uk_biobank.prepare_data()
@@ -134,6 +101,18 @@ def run_model(
     model = MtEncoder(
         num_features=uk_biobank.num_features,
         feature_names=uk_biobank.feature_names,
+        lr=learning_rate,
+        momentum=momentum,
+        weight_decay=weight_decay,
+        amsgrad=amsgrad,
+        num_layers=num_layers,
+        max_layer_size=max_layer_size,
+        latent_size=latent_size,
+        activation=activation,
+        optimizer=optimizer,
+        encoder_type=autoencoder_type,
+        dropout=dropout,
+        corruption_prob=corruption_prob
     )
 
     wandb_logger.watch(model, log='all')
@@ -150,7 +129,7 @@ def run_model(
 
 
 def sweep_func():
-    wandb.init()
+    wandb.init(config=default_config)
 
     # Sanity check configuration for mutually exclusive parameters
     optimizer = wandb.config.optimizer
@@ -164,8 +143,22 @@ def sweep_func():
         wandb.config.stochastic_weight_averaging.swa_lr = 0.0
 
     run_model(
+        latent_size=wandb.config.latent_size,
         stochastic_weight_averaging=wandb.config.stochastic_weight_averaging.enabled == 1,
-        use_wandb=True
+        swa_lr=wandb.config.stochastic_weight_averaging.swa_lr,
+        optimizer=wandb.config.optimizer,
+        momentum=wandb.config.momentum,
+        amsgrad=wandb.config.amsgrad == 1,
+        weight_decay=wandb.config.weight_decay,
+        num_layers=wandb.config.num_layers,
+        max_layer_size=wandb.config.max_layer_size,
+        activation=wandb.config.activation,
+        autoencoder_type=wandb.config.autoencoder_type,
+        dropout=wandb.config.dropout,
+        corruption_prob=wandb.config.corruption_prob,
+
+        use_wandb=True,
+        accelerator='gpu'
     )
 
 
@@ -174,11 +167,13 @@ def main():
         with open('wandb_token.txt', 'r') as f:
             wandb_token = f.read().strip()
         wandb.login(key=wandb_token)
-        if sweep:
-            sweep_id = wandb.sweep(sweep_config, project='mtProt')
-            print('Sweep ID: {}'.format(sweep_id))
-            wandb.agent(sweep_id, function=sweep_func, count=25, project='mtProt')
-            exit()
+#        if sweep:
+#            sweep_id = wandb.sweep(sweep_config, project='mtProt')
+#            print('Sweep ID: {}'.format(sweep_id))
+#            wandb.agent(sweep_id, function=sweep_func, count=25, project='mtProt')
+#            exit()
+#        else:
+        sweep_func()
 
     run_model()
 

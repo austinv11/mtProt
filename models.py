@@ -70,10 +70,19 @@ class MtEncoder(pl.LightningModule):
                  activation: str = "relu",
                  optimizer: str = "adam",
                  encoder_type: str = "vanilla",
+                 dropout: float = 0.0,
+                 corruption_prob: float = 0.0
                  ):
         super().__init__()
 
         self.activation = activation
+
+        if dropout == 0.0:
+            dropout_cls = nn.Identity
+        elif activation == "selu":
+            dropout_cls = nn.AlphaDropout
+        else:
+            dropout_cls = nn.Dropout
 
         if activation == "relu":
             activation = nn.ReLU()
@@ -93,12 +102,14 @@ class MtEncoder(pl.LightningModule):
             else:
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    dropout_cls(dropout),
                     activation,
                     self._init_weights(nn.Linear(max_layer_size, latent_size))
                 )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size)),
+                dropout_cls(dropout),
                 activation,
                 self._init_weights(nn.Linear(max_layer_size, num_features))
             )
@@ -106,21 +117,26 @@ class MtEncoder(pl.LightningModule):
         elif num_layers == 2:
             if encoder_type == 'concrete':
                 self.encoder = ConcreteEncoder(
-                    activation_fn=activation,
+                    input_size=num_features,
+                    K=latent_size,
                 )
             else:
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    dropout_cls(dropout),
                     activation,
                     self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
+                    dropout_cls(dropout),
                     activation,
                     self._init_weights(nn.Linear(max_layer_size // 2, latent_size))
                 )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size // 2)),
+                dropout_cls(dropout),
                 activation,
                 self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
+                dropout_cls(dropout),
                 activation,
                 self._init_weights(nn.Linear(max_layer_size, num_features))
             )
@@ -128,25 +144,32 @@ class MtEncoder(pl.LightningModule):
         elif num_layers == 3:
             if encoder_type == 'concrete':
                 self.encoder = ConcreteEncoder(
-                    activation_fn=activation,
+                    input_size=num_features,
+                    K=latent_size,
                 )
             else:
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    dropout_cls(dropout),
                     activation,
                     self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
+                    dropout_cls(dropout),
                     activation,
                     self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size // 4)),
+                    dropout_cls(dropout),
                     activation,
                     self._init_weights(nn.Linear(max_layer_size // 4, latent_size))
                 )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size // 4)),
+                dropout_cls(dropout),
                 activation,
                 self._init_weights(nn.Linear(max_layer_size // 4, max_layer_size // 2)),
+                dropout_cls(dropout),
                 activation,
                 self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
+                dropout_cls(dropout),
                 activation,
                 self._init_weights(nn.Linear(max_layer_size, num_features))
             )
@@ -164,6 +187,7 @@ class MtEncoder(pl.LightningModule):
         self.weight_decay = weight_decay
         self.amsgrad = amsgrad
         self.encoder_type = encoder_type
+        self.corruption_prob = corruption_prob
 
         self.save_hyperparameters()
 
@@ -208,8 +232,21 @@ class MtEncoder(pl.LightningModule):
         contractive_loss = torch.mean(mse + (lambda_ * torch.norm(torch.chain_matmul(*encoder_weights))), 0)
         return reduction(contractive_loss)
 
+    def corrupt(self, x):
+        # Half corruption with zeroes
+        x = x * (torch.rand_like(x) > self.corruption_prob / 2).float()
+        # Half corruption with random noise added
+        # Random noise per column:
+        noise = torch.rand_like(x) * torch.std(x, dim=0)
+        torch.masked_fill(x, (torch.rand_like(x) > self.corruption_prob / 2).bool(), noise)
+        return x
+
     def process_batch(self, batch, is_training=False):
         x, y = batch
+
+        if self.corruption_prob > 0:
+            x = self.corrupt(x)
+
         y_hat = self.forward(x, is_training=is_training)
         loss = F.mse_loss(y_hat, y)
 
