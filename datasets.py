@@ -22,9 +22,10 @@ class PandasDataset(Dataset):
 
 class UkBioBankDataModule(pl.LightningDataModule):
 
-    def __init__(self):
+    def __init__(self, batch_size: int = 128):
         super().__init__()
         self.filepath = "data/BioBank.xlsx"
+        self.batch_size = batch_size
 
     def prepare_data(self):
         df = pd.read_excel(self.filepath, engine="openpyxl",
@@ -43,14 +44,14 @@ class UkBioBankDataModule(pl.LightningDataModule):
             self.train_dataset, self.val_dataset = random_split(PandasDataset(df, df), [train_size, val_size])
         if stage == "test":
             df = pd.read_excel(self.filepath, engine="openpyxl",
-                               sheet_name="Test Set")
+                               sheet_name="Testing Set")
             self.test_dataset = PandasDataset(df, df)
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=128, shuffle=True)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=128, shuffle=False)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)
 
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=128, shuffle=False)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False)

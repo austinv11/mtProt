@@ -18,13 +18,11 @@ early_terminate:
 
 parameters:
 
-  stochastic_weight_averaging:
-    parameters:
-      enabled:
-        values: [0, 1]
-      swa_lr:
-        min: 0.0001
-        max: 0.1
+  swa_enabled:
+    values: [0, 1]
+  swa_lr:
+    min: 0.0001
+    max: 0.1
 
   optimizer:
     values: ['adam', 'sgd', 'adamw', 'adamax', 'radam', 'rmsprop']

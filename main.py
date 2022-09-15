@@ -10,25 +10,21 @@ from datasets import UkBioBankDataModule
 from models import MtEncoder
 
 default_config = dict(
-    stochastic_weight_averaging=dict(
-        enabled=1,
-        swa_lr=0.05,
-    ),
-    optimizer='adam',
+    swa_enabled=1,
+    swa_lr=0.05,
+    optimizer='adamw',
     learning_rate=0.001,
-    weight_decay=0.0,
-    momentum=0.9,
+    weight_decay=0,
+    momentum=0,
     amsgrad=0,
     num_layers=2,
-    hidden_size=64,
-    dropout=0.0,
-    corruption_prob=0.0,
-    max_layer_size=64,
+    dropout=0,
+    corruption_prob=0,
+    max_layer_size=120,
     latent_size=32,
     activation='relu',
     autoencoder_type='vanilla'
 )
-sweep = True
 
 
 def run_model(
@@ -95,7 +91,8 @@ def run_model(
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
         gradient_clip_val=1.0,
-        detect_anomaly=True
+        detect_anomaly=True,
+        fast_dev_run=True,
     )
 
     model = MtEncoder(
@@ -134,18 +131,18 @@ def sweep_func():
     # Sanity check configuration for mutually exclusive parameters
     optimizer = wandb.config.optimizer
     if optimizer not in ('sgd', 'rmsprop'):
-        wandb.config.momentum = 0.0
+        wandb.config.update({'momentum': 0.0}, allow_val_change=True)
 
     if optimizer not in ('adam', 'adamw'):
-        wandb.config.amsgrad = 0
+        wandb.config.update({'amsgrad': 0}, allow_val_change=True)
 
-    if wandb.config.stochastic_weight_averaging.enabled == 0:
-        wandb.config.stochastic_weight_averaging.swa_lr = 0.0
+    if wandb.config.swa_enabled == 0:
+        wandb.config.update({'swa_lr': 0.0}, allow_val_change=True)
 
     run_model(
         latent_size=wandb.config.latent_size,
-        stochastic_weight_averaging=wandb.config.stochastic_weight_averaging.enabled == 1,
-        swa_lr=wandb.config.stochastic_weight_averaging.swa_lr,
+        stochastic_weight_averaging=wandb.config.swa_enabled == 1,
+        swa_lr=wandb.config.swa_lr,
         optimizer=wandb.config.optimizer,
         momentum=wandb.config.momentum,
         amsgrad=wandb.config.amsgrad == 1,
@@ -158,7 +155,7 @@ def sweep_func():
         corruption_prob=wandb.config.corruption_prob,
 
         use_wandb=True,
-        accelerator='gpu'
+        accelerator='cpu'
     )
 
 
@@ -174,6 +171,7 @@ def main():
 #            exit()
 #        else:
         sweep_func()
+        exit()
 
     run_model()
 

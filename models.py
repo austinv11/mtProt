@@ -5,7 +5,7 @@ import torch
 import torchmetrics
 import wandb
 from torch import nn
-import torch.functional as F
+import torch.nn.functional as F
 
 
 # Implemenetation of the ConcreteAutoEncoder from the paper:
@@ -30,8 +30,8 @@ class ConcreteEncoder(nn.Module):
         self.gumbel_dist = torch.distributions.gumbel.Gumbel(0, 1)
 
         self.temp = nn.Parameter(torch.tensor(start_temperature), requires_grad=False)
-        self.logits = nn.Parameter(torch.zeros(K), requires_grad=True)
-        self.selections = nn.Parameter(torch.zeros(input_size), requires_grad=False)
+        self.logits = nn.Parameter(torch.zeros([K, input_size]), requires_grad=True)
+        self.selections = nn.Parameter(torch.zeros([input_size, K]), requires_grad=False)
         self.learn = nn.Parameter(torch.tensor(1), requires_grad=False)
 
         nn.init.xavier_normal_(self.logits)
@@ -49,11 +49,11 @@ class ConcreteEncoder(nn.Module):
         discrete_logits = F.one_hot(torch.argmax(self.logits, dim=0), self.logits.shape[0])
 
         if training:
-            self.selections.data = samples
+            self.selections.data = samples.T
         else:
-            self.selections.data = discrete_logits
+            self.selections.data = discrete_logits.float()
 
-        return torch.dot(x, torch.transpose(self.selections, 0, 1))
+        return x @ self.selections
 
 
 class MtEncoder(pl.LightningModule):
@@ -85,13 +85,13 @@ class MtEncoder(pl.LightningModule):
             dropout_cls = nn.Dropout
 
         if activation == "relu":
-            activation = nn.ReLU()
+            activation_fn = nn.ReLU()
         elif activation == "leaky_relu":
-            activation = nn.LeakyReLU()
+            activation_fn = nn.LeakyReLU()
         elif activation == "gelu":
-            activation = nn.GELU()
+            activation_fn = nn.GELU()
         elif activation == "selu":
-            activation = nn.SELU()
+            activation_fn = nn.SELU()
 
         if num_layers == 1:
             if encoder_type == 'concrete':
@@ -103,14 +103,14 @@ class MtEncoder(pl.LightningModule):
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
                     dropout_cls(dropout),
-                    activation,
+                    activation_fn,
                     self._init_weights(nn.Linear(max_layer_size, latent_size))
                 )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size)),
                 dropout_cls(dropout),
-                activation,
+                activation_fn,
                 self._init_weights(nn.Linear(max_layer_size, num_features))
             )
 
@@ -124,20 +124,20 @@ class MtEncoder(pl.LightningModule):
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
                     dropout_cls(dropout),
-                    activation,
+                    activation_fn,
                     self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
                     dropout_cls(dropout),
-                    activation,
+                    activation_fn,
                     self._init_weights(nn.Linear(max_layer_size // 2, latent_size))
                 )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size // 2)),
                 dropout_cls(dropout),
-                activation,
+                activation_fn,
                 self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
                 dropout_cls(dropout),
-                activation,
+                activation_fn,
                 self._init_weights(nn.Linear(max_layer_size, num_features))
             )
 
@@ -151,26 +151,26 @@ class MtEncoder(pl.LightningModule):
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
                     dropout_cls(dropout),
-                    activation,
+                    activation_fn,
                     self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
                     dropout_cls(dropout),
-                    activation,
+                    activation_fn,
                     self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size // 4)),
                     dropout_cls(dropout),
-                    activation,
+                    activation_fn,
                     self._init_weights(nn.Linear(max_layer_size // 4, latent_size))
                 )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size // 4)),
                 dropout_cls(dropout),
-                activation,
+                activation_fn,
                 self._init_weights(nn.Linear(max_layer_size // 4, max_layer_size // 2)),
                 dropout_cls(dropout),
-                activation,
+                activation_fn,
                 self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
                 dropout_cls(dropout),
-                activation,
+                activation_fn,
                 self._init_weights(nn.Linear(max_layer_size, num_features))
             )
 
@@ -193,7 +193,8 @@ class MtEncoder(pl.LightningModule):
 
     def _init_weights(self, layer):
         if self.activation != "selu":
-            nn.init.xavier_normal_(layer.weight, gain=nn.init.calculate_gain(self.activation))
+            can_calc_gain = self.activation in ["relu", "leaky_relu"]
+            nn.init.xavier_normal_(layer.weight, gain=nn.init.calculate_gain(self.activation) if can_calc_gain else 1.0)
 
         return layer
 
@@ -214,10 +215,20 @@ class MtEncoder(pl.LightningModule):
             rho * torch.log(rho / rho_hat) + (1 - rho) * torch.log((1 - rho) / (1 - rho_hat))
         )
 
+    def _get_relevant_children(self, include_decoder=True):
+        relevant_children = []
+        for child in self.encoder.children():
+            if type(child) not in (nn.AlphaDropout, nn.Dropout, nn.Identity):
+               yield child
+        if include_decoder:
+            for child in self.decoder.children():
+                if type(child) not in (nn.AlphaDropout, nn.Dropout, nn.Identity):
+                    yield child
+
     def _sparse_loss(self, values, rho=0.05):
         # Rho is the sparsity parameter
         loss = 0
-        for child in self.children():
+        for child in self._get_relevant_children():
             values = child(values)
             loss += self._kl_divergence(values, rho=rho)
         return loss
@@ -227,9 +238,9 @@ class MtEncoder(pl.LightningModule):
         # https://github.com/avijit9/Contractive_Autoencoder_in_Pytorch/blob/master/CAE_pytorch.py
         # Lambda is the regularization parameter
         # reduction can be torch.mean or torch.sum
-        encoder_units = reversed([child for child in self.children() if isinstance(child, nn.Linear)])
+        encoder_units = reversed([child for child in self._get_relevant_children(include_decoder=False) if isinstance(child, nn.Linear)])
         encoder_weights = [child.weight for child in encoder_units]
-        contractive_loss = torch.mean(mse + (lambda_ * torch.norm(torch.chain_matmul(*encoder_weights))), 0)
+        contractive_loss = torch.mean(mse + (lambda_ * torch.norm(torch.linalg.multi_dot(encoder_weights))), 0)
         return reduction(contractive_loss)
 
     def corrupt(self, x):
@@ -238,7 +249,7 @@ class MtEncoder(pl.LightningModule):
         # Half corruption with random noise added
         # Random noise per column:
         noise = torch.rand_like(x) * torch.std(x, dim=0)
-        torch.masked_fill(x, (torch.rand_like(x) > self.corruption_prob / 2).bool(), noise)
+        torch.masked_scatter(x, (torch.rand_like(x) > self.corruption_prob / 2).bool(), noise)
         return x
 
     def process_batch(self, batch, is_training=False):
@@ -265,48 +276,49 @@ class MtEncoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-           wandb.define_metric('train_r2', summary='last', goal="maximize")
+           wandb.define_metric('train_r2', summary='last')
 
         loss, r2 = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
-        self.log("train_r2",
-                 wandb.plot.bar(
-                     r2, "feature", "r2",
-                     title="R2 Score by Feature"
-                 ),
-                 on_step=False, on_epoch=True)
+
+        self.logger.log_metrics({"train_r2":
+            wandb.plot.bar(
+                r2, "feature", "r2",
+                title="R2 Score by Feature"
+            )}, step=self.trainer.global_step)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-           wandb.define_metric('val_r2', summary='last', goal="maximize")
+           wandb.define_metric('val_r2', summary='last')
 
         loss, r2 = self.process_batch(batch)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True)
-        self.log("val_r2",
-                 wandb.plot.bar(
-                     r2, "feature", "r2",
-                     title="R2 Score by Feature"
-                 ),
-                 on_step=False, on_epoch=True)
+
+        self.logger.log_metrics({"val_r2":
+            wandb.plot.bar(
+                r2, "feature", "r2",
+                title="R2 Score by Feature"
+            )}, step=self.trainer.global_step)
 
         return loss
 
     def test_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-           wandb.define_metric('test_r2', summary='last', goal="maximize")
+           wandb.define_metric('test_r2', summary='last')
 
         loss, r2 = self.process_batch(batch)
 
         self.log("test_loss", loss)
-        self.log("test_r2",
-                 wandb.plot.bar(
-                     r2, "feature", "r2",
-                     title="R2 Score by Feature"
-                 ))
+
+        self.logger.log_metrics({"test_r2":
+            wandb.plot.bar(
+                r2, "feature", "r2",
+                title="R2 Score by Feature"
+            )}, step=self.trainer.global_step)
 
         return loss
 
