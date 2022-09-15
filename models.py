@@ -1,9 +1,59 @@
+import math
+
 import pytorch_lightning as pl
 import torch
 import torchmetrics
 import wandb
 from torch import nn
 import torch.functional as F
+
+
+# Implemenetation of the ConcreteAutoEncoder from the paper:
+# https://arxiv.org/abs/1901.09346
+# Based on author tensorflow implementation at: https://github.com/mfbalin/concrete-autoencoders
+class ConcreteEncoder(nn.Module):
+
+    def __init__(self,
+                 input_size: int,
+                 K: int,  # Number of features to select
+                 alpha: float = 0.99999,  # Temperature schedule
+                 start_temperature: float = 10.0,  # Starting temperature for the concrete encoder
+                 end_temperature: float = 0.1,  # Ending temperature for the concrete encoder
+                 ):
+        super().__init__()
+
+        self.input_size = input_size
+        self.K = K
+        self.start_temp = start_temperature
+        self.end_temp = end_temperature
+        self.alpha = alpha
+        self.gumbel_dist = torch.distributions.gumbel.Gumbel(0, 1)
+
+        self.temp = nn.Parameter(torch.tensor(start_temperature), requires_grad=False)
+        self.logits = nn.Parameter(torch.zeros(K), requires_grad=True)
+        self.selections = nn.Parameter(torch.zeros(input_size), requires_grad=False)
+        self.learn = nn.Parameter(torch.tensor(1), requires_grad=False)
+
+        nn.init.xavier_normal_(self.logits)
+
+    @classmethod
+    def calculate_alpha(cls, num_epochs: int, features: int, batch_size: int, start_temp: float = 10.0, end_temp: float = 0.1):
+        # Calculate ideal alpha for the concrete encoder
+        # Ref: https://github.com/mfbalin/Concrete-Autoencoders/blob/master/concrete_autoencoder/concrete_autoencoder/__init__.py#L89
+        return math.exp(math.log(end_temp / start_temp) / num_epochs * (features + batch_size - 1) // batch_size)
+
+    def forward(self, x, training=False):
+        self.temp.data = torch.clamp(self.temp.data * self.alpha, self.end_temp, self.start_temp)
+        noisy_logits = (self.logits + self.gumbel_dist.sample(self.logits.shape)) / self.temp
+        samples = F.softmax(noisy_logits, dim=0)
+        discrete_logits = F.one_hot(torch.argmax(self.logits, dim=0), self.logits.shape[0])
+
+        if training:
+            self.selections.data = samples
+        else:
+            self.selections.data = discrete_logits
+
+        return torch.dot(x, torch.transpose(self.selections, 0, 1))
 
 
 class MtEncoder(pl.LightningModule):
@@ -35,11 +85,17 @@ class MtEncoder(pl.LightningModule):
             activation = nn.SELU()
 
         if num_layers == 1:
-            self.encoder = nn.Sequential(
-                self._init_weights(nn.Linear(num_features, max_layer_size)),
-                activation,
-                self._init_weights(nn.Linear(max_layer_size, latent_size))
-            )
+            if encoder_type == 'concrete':
+                self.encoder = ConcreteEncoder(
+                    input_size=num_features,
+                    K=latent_size,
+                )
+            else:
+                self.encoder = nn.Sequential(
+                    self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    activation,
+                    self._init_weights(nn.Linear(max_layer_size, latent_size))
+                )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size)),
@@ -48,13 +104,18 @@ class MtEncoder(pl.LightningModule):
             )
 
         elif num_layers == 2:
-            self.encoder = nn.Sequential(
-                self._init_weights(nn.Linear(num_features, max_layer_size)),
-                activation,
-                self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
-                activation,
-                self._init_weights(nn.Linear(max_layer_size // 2, latent_size))
-            )
+            if encoder_type == 'concrete':
+                self.encoder = ConcreteEncoder(
+                    activation_fn=activation,
+                )
+            else:
+                self.encoder = nn.Sequential(
+                    self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    activation,
+                    self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
+                    activation,
+                    self._init_weights(nn.Linear(max_layer_size // 2, latent_size))
+                )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size // 2)),
@@ -65,15 +126,20 @@ class MtEncoder(pl.LightningModule):
             )
 
         elif num_layers == 3:
-            self.encoder = nn.Sequential(
-                self._init_weights(nn.Linear(num_features, max_layer_size)),
-                activation,
-                self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
-                activation,
-                self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size // 4)),
-                activation,
-                self._init_weights(nn.Linear(max_layer_size // 4, latent_size))
-            )
+            if encoder_type == 'concrete':
+                self.encoder = ConcreteEncoder(
+                    activation_fn=activation,
+                )
+            else:
+                self.encoder = nn.Sequential(
+                    self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    activation,
+                    self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
+                    activation,
+                    self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size // 4)),
+                    activation,
+                    self._init_weights(nn.Linear(max_layer_size // 4, latent_size))
+                )
 
             self.decoder = nn.Sequential(
                 self._init_weights(nn.Linear(latent_size, max_layer_size // 4)),
@@ -107,11 +173,14 @@ class MtEncoder(pl.LightningModule):
 
         return layer
 
-    def forward_encoder(self, x):
-        return self.encoder(x)
+    def forward_encoder(self, x, is_training=False):
+        if self.encoder_type == 'concrete':
+            return self.encoder(x, training=is_training)
+        else:
+            return self.encoder(x)
 
-    def forward(self, x):
-        return self.decoder(self.forward_encoder(x))
+    def forward(self, x, is_training=False):
+        return self.decoder(self.forward_encoder(x, is_training=is_training))
 
     def _kl_divergence(self, rho_pred, rho=0.05):
         # Rho is the sparsity parameter
@@ -129,7 +198,7 @@ class MtEncoder(pl.LightningModule):
             loss += self._kl_divergence(values, rho=rho)
         return loss
 
-    def _contractive_loss(self, mse, x, xhat, lambda_=1e-4, reduction=torch.sum):
+    def _contractive_loss(self, mse, lambda_=1e-4, reduction=torch.sum):
         # https://github.com/AlexPasqua/Autoencoders/blob/main/src/custom_losses.py
         # https://github.com/avijit9/Contractive_Autoencoder_in_Pytorch/blob/master/CAE_pytorch.py
         # Lambda is the regularization parameter
@@ -141,7 +210,7 @@ class MtEncoder(pl.LightningModule):
 
     def process_batch(self, batch, is_training=False):
         x, y = batch
-        y_hat = self(x)
+        y_hat = self.forward(x, is_training=is_training)
         loss = F.mse_loss(y_hat, y)
 
         if self.encoder_type == "sparse" and is_training:
@@ -150,7 +219,7 @@ class MtEncoder(pl.LightningModule):
             beta = 0.001  # Weight for the sparsity penalty
             loss += beta * sparsity
         elif self.encoder_type == "contractive" and is_training:
-            loss = self._contractive_loss(loss, x, y_hat)
+            loss = self._contractive_loss(loss)
 
         r2 = self.r2_score(y_hat, y)
         r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.feature_names, r2)],
