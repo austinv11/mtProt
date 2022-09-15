@@ -86,7 +86,7 @@ def run_model(
         accelerator=accelerator,
         devices=1,
         auto_select_gpus=True,
-        max_epochs=250,
+        max_epochs=200,
         enable_checkpointing=True,
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
@@ -155,7 +155,7 @@ def sweep_func():
         corruption_prob=wandb.config.corruption_prob,
 
         use_wandb=True,
-        accelerator='cpu'
+        accelerator='gpu'
     )
 
 
