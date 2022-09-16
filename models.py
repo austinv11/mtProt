@@ -44,7 +44,7 @@ class ConcreteEncoder(nn.Module):
 
     def forward(self, x, training=False):
         self.temp.data = torch.clamp(self.temp.data * self.alpha, self.end_temp, self.start_temp)
-        noisy_logits = (self.logits + self.gumbel_dist.sample(self.logits.shape)) / self.temp
+        noisy_logits = (self.logits + self.gumbel_dist.sample(self.logits.shape).to(x.device)) / self.temp
         samples = F.softmax(noisy_logits, dim=0)
         discrete_logits = F.one_hot(torch.argmax(self.logits, dim=0), self.logits.shape[0])
 
