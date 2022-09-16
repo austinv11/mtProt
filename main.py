@@ -66,11 +66,11 @@ def run_model(
         EarlyStopping(
             monitor="val_loss",
             mode="min",
-            patience=5,
+            patience=10,
             verbose=True,
-            min_delta=0.0001
+            min_delta=1e-4
         ),
-        LearningRateMonitor(logging_interval='step'),
+        LearningRateMonitor(logging_interval='epoch'),
         DeviceStatsMonitor()
     ]
 

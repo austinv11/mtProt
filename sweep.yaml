@@ -12,10 +12,6 @@ metric:
   name: val_loss
   goal: minimize
 
-early_terminate:
-  type: hyperband
-  min_iter: 3
-
 parameters:
 
   swa_enabled:
