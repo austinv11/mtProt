@@ -1,0 +1,49 @@
+- Most hyperparams make relatively little difference
+- Concrete autoencoders are the worst
+
+For Vanilla:
+- AdamW is the best optimizer
+- higher weight decay is worse
+- higher dropout is worse
+- gelu is bad
+- low number of layers is better
+- rmsprop is bad
+- amsgrad is good
+- higher momentum is good
+- higher lr is better
+- higher latent is better
+- Higher max layer size is better
+- selu is okay
+- radam bad
+- relu good
+
+For Sparse:
+- AdamW is the best optimizer
+- higher weight decay is worse
+- higher num of layers is worse
+- higher dropout is worse
+- higher lr is worse
+- higher momentum is worse
+- amsgrad good
+- leaky relu good
+- higher max layer size is better
+- sgd bad
+- swa bad
+
+For Contractive:
+- adamw is the best optimizer
+- higher num of layers is worse
+- relu is best
+- leaky relu is okay
+- sgd bad
+- higher weight decay is worse
+- higher dropout is worse
+- higher swa lr is worse
+
+For Concrete:
+- High weight decay really hurts loss
+- High num of layers is bad
+- Leaky relu bad
+- Gelu good
+- max layer bad
+- Generally worse performance

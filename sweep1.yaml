@@ -14,55 +14,77 @@ metric:
 
 parameters:
 
+  # Enabled is worse loss
   swa_enabled:
     values: [0, 1]
+  # Higher values = worse loss
   swa_lr:
     min: 0.0001
     max: 0.1
 
   optimizer:
-    values: ['adam', 'sgd', 'adamw', 'adamax', 'radam', 'rmsprop']
+    values: [
+      'adam',
+      'sgd', # Worst loss
+      'adamw', # Best loss
+      'adamax', # Second worse, low import
+      'radam',
+      'rmsprop']
 
+  # Higher values = worse loss
   learning_rate:
     min: 0.0001
     max: 0.1
 
+  # higher = better loss
   momentum:
     values: [0.0, 0.9, 0.99]
 
+  # higher = worse loss
   weight_decay:
     min: 0.0
     max: 0.1
 
+  # Enabled = better loss
   amsgrad:
     values: [0, 1]
 
+  # Higher = worse loss
   num_layers:
     values: [1, 2, 3]
 
+  # higher = slightly better loss
   max_layer_size:
     values: [64, 128, 256]
 
-  latent_size:
+  latent_size: # Higher = worse loss
     distribution: 'int_uniform'
     min: 3
     max: 64
 
   activation:
-    values: ['relu', 'leaky_relu', 'gelu', 'selu']
+    values: ['relu', # Best loss
+             'leaky_relu', # Second best loss
+             'gelu', # Second worse loss
+             'selu'  # Worse loss
+    ]
 
   autoencoder_type:
     values: [
-            'vanilla',  # Standard
+            'vanilla',  # Standard, best loss
+            # Second best loss
             'sparse',  # See Goodfellow et al. 2016, forces sparsity in the latent space to make features more interpretable
             # See also https://web.stanford.edu/class/cs294a/sparseAutoencoder.pdf
             'contractive',  # See Goodfellow et al 2016, forces the latent space to be smooth to make features more interpretable
             # See also https://wiseodd.github.io/techblog/2016/12/05/contractive-autoencoder/
+            # Worse loss
             'concrete',  # https://arxiv.org/abs/1901.09346  method for unsupervised feature selection
             ]
 
+  # higher = worse loss
   dropout:
     values: [0.0, 0.1, 0.2, 0.3, 0.4]
 
+  # lower = better loss
   corruption_prob:
     values: [0.0, 0.1, 0.2, 0.3, 0.4]

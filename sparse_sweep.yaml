@@ -1,0 +1,105 @@
+program: main.py
+
+entity: wcm-austin
+project: mtProt
+
+name: SparseAE
+
+method: bayes
+
+metric:
+  name: val_loss
+  goal: minimize
+
+parameters:
+
+  autoencoder_type:
+    distribution: constant
+    value: 'sparse'
+
+  optimizer:
+    distribution: categorical
+    values:
+      - adamw # Best loss
+      - adam
+      #- sgd
+      #- adamax Performs poorly
+      - radam
+      - rmsprop
+
+  # higher = worse loss
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00001  # No way to do 0
+    max: 0.1
+
+  # higher = worse loss
+  max_layer_size:
+    distribution: q_log_uniform_values
+    q: 2
+    min: 64
+    max: 256
+
+  activation:
+    distribution: categorical
+    values:
+      - relu
+      - leaky_relu
+      - gelu
+      #- selu Performs poorly
+
+  learning_rate:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.1
+
+  # Enabled = better loss
+  amsgrad:
+    distribution: int_uniform
+    min: 0
+    max: 1
+
+  # higher = worse loss
+  dropout:
+    distribution: uniform
+    min: 0.0
+    max: 0.4
+
+  # Enabled is worse loss
+  swa_enabled:
+    distribution: int_uniform
+    min: 0
+    max: 1
+  # Higher values = worse loss
+  swa_lr:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.1
+
+  # higher = better loss
+  momentum:
+    distribution: categorical
+    values:
+      - 0.0
+      - 0.9
+      - 0.99
+      - 0.999
+
+  num_layers:
+    distribution: int_uniform
+    values:
+      - 1
+      - 2
+      - 3
+
+  latent_size: # Higher = worse loss
+    distribution: q_log_uniform_values
+    min: 4
+    max: 64
+    q: 1
+
+  # lower = better loss
+  corruption_prob:
+    distribution: uniform
+    min: 0.0
+    max: 0.4
