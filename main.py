@@ -55,7 +55,7 @@ def run_model(
         dirpath="checkpoints/autoencoder",
         monitor="val_loss",
         verbose=True,
-        save_top_k=3,
+        save_top_k=1,
         mode="min",
         save_last=True,
         auto_insert_metric_name=True
