@@ -66,7 +66,7 @@ def run_model(
         EarlyStopping(
             monitor="val_loss",
             mode="min",
-            patience=10,
+            patience=25,
             verbose=True,
             check_on_train_epoch_end=True
         ),
@@ -91,7 +91,6 @@ def run_model(
         callbacks=callbacks,
         gradient_clip_val=1.0,
         detect_anomaly=True,
-        check_val_every_n_epoch=5,
         fast_dev_run=False,
     )
 
