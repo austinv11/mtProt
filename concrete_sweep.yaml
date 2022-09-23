@@ -3,7 +3,7 @@ program: main.py
 entity: wcm-austin
 project: mtProt
 
-name: ContractiveAE
+name: ConcreteAE
 
 method: bayes
 
@@ -15,7 +15,7 @@ parameters:
 
   autoencoder_type:
     distribution: constant
-    value: 'contractive'
+    value: 'concrete'
 
   optimizer:
     distribution: categorical
