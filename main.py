@@ -68,10 +68,9 @@ def run_model(
             mode="min",
             patience=10,
             verbose=True,
-            min_delta=1e-4
+            check_on_train_epoch_end=True
         ),
-        LearningRateMonitor(logging_interval='epoch'),
-        DeviceStatsMonitor()
+        LearningRateMonitor(logging_interval='epoch')
     ]
 
     if stochastic_weight_averaging:
@@ -92,6 +91,7 @@ def run_model(
         callbacks=callbacks,
         gradient_clip_val=1.0,
         detect_anomaly=True,
+        check_val_every_n_epoch=5,
         fast_dev_run=False,
     )
 
