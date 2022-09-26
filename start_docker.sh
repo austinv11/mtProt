@@ -4,4 +4,4 @@
 #docker1 rm aav4003__biohpc_prot-docker
 
 # docker1 run --gpus all -d biohpc_aav4003/prot-docker:latest
-docker1 run --gpus all -d "biohpc_aav4003/prot_docker_$1:latest"
+docker1 run --gpus "\"device=$2\"" -d "biohpc_aav4003/prot_docker_$1:latest"
