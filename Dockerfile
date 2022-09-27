@@ -7,6 +7,10 @@ ARG sweep_file
 
 # Install dependencies
 ADD . .
+
+# Mitigate DNS problems
+RUN cat custom_hosts.txt >> /etc/hosts
+
 RUN conda install --yes --freeze-installed -c conda-forge --file requirements.txt
 
 RUN wandb login $(cat wandb_token.txt)
