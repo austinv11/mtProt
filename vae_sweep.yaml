@@ -13,6 +13,7 @@ metric:
 
 early_terminate:
   type: hyperband
+  min_iter: 5
 
 parameters:
 

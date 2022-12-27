@@ -63,15 +63,17 @@ def run_model(
 
     callbacks = [
         checkpoint_callback,
-        EarlyStopping(
-            monitor="val_loss",
-            mode="min",
-            patience=25,
-            verbose=True,
-            check_on_train_epoch_end=True
-        ),
         LearningRateMonitor(logging_interval='epoch')
     ]
+
+    if not use_wandb:  # Sweeps use hyperband, so we don't need early stopping
+        callbacks.append(EarlyStopping(
+            monitor="val_loss",
+            mode="min",
+            patience=5,
+            verbose=True,
+            check_on_train_epoch_end=True
+        ))
 
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(swa_lr))

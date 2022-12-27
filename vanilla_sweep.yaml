@@ -11,6 +11,10 @@ metric:
   name: val_loss
   goal: minimize
 
+early_terminate:
+  type: hyperband
+  min_iter: 5
+
 parameters:
 
   autoencoder_type:
