@@ -8,3 +8,4 @@ docker1 run --gpus "\"device=1\"" -d "biohpc_aav4003/prot_docker_vanilla_sweep:l
 docker1 run --gpus "\"device=2\"" -d "biohpc_aav4003/prot_docker_sparse_sweep:latest"
 docker1 run --gpus "\"device=1\"" -d "biohpc_aav4003/prot_docker_contractive_sweep:latest"
 docker1 run --gpus "\"device=2\"" -d "biohpc_aav4003/prot_docker_concrete_sweep:latest"
+docker1 run --gpus "\"device=1\"" -d "biohpc_aav4003/prot_docker_vae_sweep:latest"
