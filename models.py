@@ -303,7 +303,7 @@ class MtEncoder(pl.LightningModule):
             # Encode the linear layers
             self._init_weights(layer.mu_encoder)
             self._init_weights(layer.var_encoder)
-            self._init_weights(layer.mu_decoder)
+            self._init_weights(layer.decoder)
         if type(layer) == nn.Sequential:
             for l in layer:
                 self._init_weights(l)
