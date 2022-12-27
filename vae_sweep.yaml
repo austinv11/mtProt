@@ -5,7 +5,7 @@ project: mtProt
 
 name: VAE
 
-method: random # bayes
+method: bayes
 
 metric:
   name: val_loss
