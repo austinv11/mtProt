@@ -5,7 +5,7 @@ project: mtProt
 
 name: ConcreteAE
 
-method: bayes
+method: random #bayes
 
 metric:
   name: val_loss
@@ -22,8 +22,8 @@ parameters:
     values:
       - adamw # Performs poorly?
       - adam
-      #- sgd
-      #- adamax Performs poorly
+      - sgd
+      - adamax #Performs poorly
       - radam
       - rmsprop
 
@@ -46,7 +46,7 @@ parameters:
       - relu
       - leaky_relu
       - gelu
-      #- selu Performs poorly
+      - selu #Performs poorly
 
   learning_rate:
     distribution: log_uniform_values
@@ -61,9 +61,14 @@ parameters:
 
   # higher = worse loss
   dropout:
-    distribution: uniform
-    min: 0.0
-    max: 0.4
+    distribution: categorical
+    values:
+      - 0.0
+      - 0.05
+      - 0.1
+      - 0.15
+      - 0.25
+      - 0.4
 
   # Enabled is worse loss
   swa_enabled:

@@ -79,6 +79,7 @@ parameters:
             # See also https://wiseodd.github.io/techblog/2016/12/05/contractive-autoencoder/
             # Worse loss
             'concrete',  # https://arxiv.org/abs/1901.09346  method for unsupervised feature selection
+            'vae'  # Variational AutoEncoder
             ]
 
   # higher = worse loss

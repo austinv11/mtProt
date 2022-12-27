@@ -56,6 +56,55 @@ class ConcreteEncoder(nn.Module):
         return x @ self.selections
 
 
+# Variational AutoEncoder
+# Does not implement the hidden layers, only the latent space transformation
+# Based on https://github.com/Jackson-Kang/Pytorch-VAE-tutorial/blob/master/01_Variational_AutoEncoder.ipynb
+class VariationalEncoder(nn.Module):
+    def __init__(self,
+                 input_size: int,
+                 latent_size: int,
+                 activation_fn: nn.Module):
+        super().__init__()
+        self.input_size = input_size
+        self.latent_size = latent_size
+        self.activation = activation_fn
+        self.mu_encoder = nn.Sequential(
+            nn.Linear(input_size, latent_size),
+            self.activation
+        )
+        self.var_encoder = nn.Sequential(
+            nn.Linear(input_size, latent_size),
+            self.activation
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_size, input_size)
+        )
+
+    def reparameterize(self, mu, var):
+        eps = torch.randn_like(var)
+        z = mu + var*eps
+        return z
+
+    def kl_loss(self, x, x_hat, mean, log_var):
+        reproduction_loss = nn.functional.binary_cross_entropy(x_hat, x, reduction='sum')
+        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+        return reproduction_loss + KLD
+
+    def encode(self, x):
+        mu = self.mu_encoder(x)
+        log_var = self.var_encoder(x)
+        z = self.reparameterize(mu, torch.exp(log_var/2))
+        return mu, log_var, z
+
+    def decode(self, z):
+        return self.decoder(z)
+
+    def forward(self, x):
+        mu, log_var, z = self.encode(x)
+        xhat = self.decode(z)
+        return xhat, mu, log_var
+
+
 class MtEncoder(pl.LightningModule):
     def __init__(self,
                  num_features: int,
@@ -77,7 +126,7 @@ class MtEncoder(pl.LightningModule):
 
         self.activation = activation
 
-        if dropout == 0.0:
+        if dropout == 0:
             dropout_cls = nn.Identity
         elif activation == "selu":
             dropout_cls = nn.AlphaDropout
@@ -99,26 +148,50 @@ class MtEncoder(pl.LightningModule):
                     input_size=num_features,
                     K=latent_size,
                 )
+            elif encoder_type == 'vae':
+                self.vae_module = VariationalEncoder(
+                    input_size=num_features,
+                    latent_size=latent_size,
+                    activation_fn=activation_fn
+                )
+                self._init_weights(self.vae_module)
+                self.encoder = nn.Identity()
             else:
                 self.encoder = nn.Sequential(
                     self._init_weights(nn.Linear(num_features, max_layer_size)),
                     dropout_cls(dropout),
                     activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, latent_size))
+                    self._init_weights(nn.Linear(max_layer_size, latent_size)),
+                    activation_fn
                 )
 
-            self.decoder = nn.Sequential(
-                self._init_weights(nn.Linear(latent_size, max_layer_size)),
-                dropout_cls(dropout),
-                activation_fn,
-                self._init_weights(nn.Linear(max_layer_size, num_features))
-            )
+            if encoder_type == 'vae':  # VAE has a built in decoder layer
+                self.decoder = nn.Identity()
+            else:
+                self.decoder = nn.Sequential(
+                    self._init_weights(nn.Linear(latent_size, max_layer_size)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size, num_features))
+                )
 
         elif num_layers == 2:
             if encoder_type == 'concrete':
                 self.encoder = ConcreteEncoder(
                     input_size=num_features,
                     K=latent_size,
+                )
+            elif encoder_type == 'vae':
+                self.vae_module = VariationalEncoder(
+                        input_size=max_layer_size,
+                        latent_size=latent_size,
+                        activation_fn=activation_fn
+                    )
+                self._init_weights(self.vae_module)
+                self.encoder = nn.Sequential(
+                    self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    dropout_cls(dropout),
+                    activation_fn
                 )
             else:
                 self.encoder = nn.Sequential(
@@ -128,24 +201,47 @@ class MtEncoder(pl.LightningModule):
                     self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
                     dropout_cls(dropout),
                     activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 2, latent_size))
+                    self._init_weights(nn.Linear(max_layer_size // 2, latent_size)),
+                    activation_fn
                 )
 
-            self.decoder = nn.Sequential(
-                self._init_weights(nn.Linear(latent_size, max_layer_size // 2)),
-                dropout_cls(dropout),
-                activation_fn,
-                self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
-                dropout_cls(dropout),
-                activation_fn,
-                self._init_weights(nn.Linear(max_layer_size, num_features))
-            )
+            if encoder_type == 'vae':  # VAE has a built in decoder layer
+                self.decoder = nn.Sequential(
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size, num_features))
+                )
+            else:
+                self.decoder = nn.Sequential(
+                    self._init_weights(nn.Linear(latent_size, max_layer_size // 2)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size, num_features))
+                )
 
         elif num_layers == 3:
             if encoder_type == 'concrete':
                 self.encoder = ConcreteEncoder(
                     input_size=num_features,
                     K=latent_size,
+                )
+            elif encoder_type == 'vae':
+                self.vae_module = VariationalEncoder(
+                        input_size=max_layer_size//2,
+                        latent_size=latent_size,
+                        activation_fn=activation_fn
+                    )
+                self._init_weights(self.vae_module)
+                self.encoder = nn.Sequential(
+                    self._init_weights(nn.Linear(num_features, max_layer_size)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size, max_layer_size//2)),
+                    dropout_cls(dropout),
+                    activation_fn
                 )
             else:
                 self.encoder = nn.Sequential(
@@ -158,21 +254,32 @@ class MtEncoder(pl.LightningModule):
                     self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size // 4)),
                     dropout_cls(dropout),
                     activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 4, latent_size))
+                    self._init_weights(nn.Linear(max_layer_size // 4, latent_size)),
+                    activation_fn
                 )
 
-            self.decoder = nn.Sequential(
-                self._init_weights(nn.Linear(latent_size, max_layer_size // 4)),
-                dropout_cls(dropout),
-                activation_fn,
-                self._init_weights(nn.Linear(max_layer_size // 4, max_layer_size // 2)),
-                dropout_cls(dropout),
-                activation_fn,
-                self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
-                dropout_cls(dropout),
-                activation_fn,
-                self._init_weights(nn.Linear(max_layer_size, num_features))
-            )
+            if encoder_type == 'vae':  # VAE has a built in decoder layer
+                self.decoder = nn.Sequential(
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size//2, max_layer_size)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size, num_features))
+                )
+            else:
+                self.decoder = nn.Sequential(
+                    self._init_weights(nn.Linear(latent_size, max_layer_size // 4)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size // 4, max_layer_size // 2)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
+                    dropout_cls(dropout),
+                    activation_fn,
+                    self._init_weights(nn.Linear(max_layer_size, num_features))
+                )
 
         else:
             raise ValueError("num_layers must be 1, 2, or 3")
@@ -192,20 +299,44 @@ class MtEncoder(pl.LightningModule):
         self.save_hyperparameters()
 
     def _init_weights(self, layer):
-        if self.activation != "selu":
-            can_calc_gain = self.activation in ["relu", "leaky_relu"]
-            nn.init.xavier_normal_(layer.weight, gain=nn.init.calculate_gain(self.activation) if can_calc_gain else 1.0)
+        if type(layer) == VariationalEncoder:
+            # Encode the linear layers
+            self._init_weights(layer.mu_encode)
+            self._init_weights(layer.logvar_encoder)
+            self._init_weights(layer.mu_decoder)
+        if type(layer) == nn.Sequential:
+            for l in layer:
+                self._init_weights(l)
+        if type(layer) == nn.Linear:
+            if self.activation != "selu":
+                can_calc_gain = self.activation in ["relu", "leaky_relu"]
+                nn.init.xavier_normal_(layer.weight, gain=nn.init.calculate_gain(self.activation) if can_calc_gain else 1.0)
 
         return layer
 
     def forward_encoder(self, x, is_training=False):
         if self.encoder_type == 'concrete':
             return self.encoder(x, training=is_training)
+        elif self.encoder_type == 'vae':
+            hidden = self.encoder(x)
+            mu, log_var, z = self.vae_module.encode(hidden)
+            if is_training:
+                return mu, log_var, z
+            else:
+                return z
         else:
             return self.encoder(x)
 
     def forward(self, x, is_training=False):
-        return self.decoder(self.forward_encoder(x, is_training=is_training))
+        z = self.forward_encoder(x, is_training=is_training)
+        if self.encoder_type == 'vae' and is_training:
+            mu, log_var, z = z
+
+        reconstruction = self.decoder(z)
+
+        if self.encoder_type == 'vae' and is_training:
+            return reconstruction, mu, log_var
+        return reconstruction
 
     def _kl_divergence(self, rho_pred, rho=0.05):
         # Rho is the sparsity parameter
@@ -259,7 +390,11 @@ class MtEncoder(pl.LightningModule):
             x = self.corrupt(x)
 
         y_hat = self.forward(x, is_training=is_training)
-        loss = F.mse_loss(y_hat, y)
+        if self.encoder_type == 'vae' and is_training:
+            y_hat, mu, log_var = y_hat
+            loss = self.vae_module.kl_loss(y, y_hat, mu, log_var)
+        else:
+            loss = F.mse_loss(y_hat, y)
 
         if self.encoder_type == "sparse" and is_training:
             # https://debuggercafe.com/sparse-autoencoders-using-kl-divergence-with-pytorch/
