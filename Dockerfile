@@ -1,6 +1,8 @@
 # Based on: https://github.com/Lightning-AI/lightning/tree/master/dockers
 FROM pytorchlightning/pytorch_lightning:base-conda-py3.9-torch1.12-cuda11.3.1
 
+RUN conda update -n base -c defaults conda
+
 RUN conda install --yes -c conda-forge ncurses
 
 ARG sweep_file
