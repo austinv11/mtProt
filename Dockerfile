@@ -8,15 +8,16 @@ RUN conda config --system --set solver libmamba
 
 RUN conda install --yes -c conda-forge ncurses
 
+# Mitigate DNS problems
+RUN cat custom_hosts.txt >> /etc/hosts
+
+RUN conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
+
 ARG sweep_file
 
 # Install dependencies
 ADD . .
 
-# Mitigate DNS problems
-RUN cat custom_hosts.txt >> /etc/hosts
-
-RUN conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 RUN conda install --yes --freeze-installed -c conda-forge --file requirements.txt
 
 RUN wandb login $(cat wandb_token.txt)

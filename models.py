@@ -396,10 +396,10 @@ class MtEncoder(pl.LightningModule):
         if self.encoder_type == 'vae' and is_training:
             y_hat, mu, log_var = y_hat
             loss = self.vae_module.kl_loss(y, y_hat, mu, log_var).to(y.device)
-            self.print("!2: ", loss.device)
+            #self.print("!2: ", loss.device)
         else:
             loss = F.mse_loss(y_hat, y)
-        self.print("!3: ", y_hat.device)
+        #self.print("!3: ", y_hat.device)
 
         if self.encoder_type == "sparse" and is_training:
             # https://debuggercafe.com/sparse-autoencoders-using-kl-divergence-with-pytorch/
