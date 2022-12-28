@@ -81,14 +81,14 @@ class VariationalEncoder(nn.Module):
         )
 
     def reparameterize(self, mu, var):
-        eps = torch.randn_like(var)
+        eps = torch.randn_like(mu)
         z = mu + var*eps
         return z
 
     def kl_loss(self, x, x_hat, mean, log_var):
         reproduction_loss = nn.functional.binary_cross_entropy(x_hat, x, reduction='sum')
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-        return reproduction_loss + KLD
+        return (reproduction_loss + KLD).to(x.device)
 
     def encode(self, x):
         mu = self.mu_encoder(x)
@@ -394,7 +394,8 @@ class MtEncoder(pl.LightningModule):
         y_hat = self.forward(x, is_training=is_training)
         if self.encoder_type == 'vae' and is_training:
             y_hat, mu, log_var = y_hat
-            loss = self.vae_module.kl_loss(y, y_hat, mu, log_var)
+            y_hat = y_hat.to(y.device)
+            loss = self.vae_module.kl_loss(y, y_hat, mu, log_var).to(y.device)
         else:
             loss = F.mse_loss(y_hat, y)
 
