@@ -3,8 +3,8 @@ FROM pytorchlightning/pytorch_lightning:base-conda-py3.9-torch1.12-cuda11.3.1
 
 RUN conda update -n base -c defaults conda
 
-RUN conda install -n base conda-libmamba-solver
-RUN conda config --set solver libmamba
+RUN conda install --yes -n base conda-libmamba-solver
+RUN conda config --system --set solver libmamba
 
 RUN conda install --yes -c conda-forge ncurses
 
