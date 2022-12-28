@@ -47,9 +47,9 @@ def run_model(
         accelerator='cpu'
 ):
     kwargs = dict()
-    if use_wandb:
+    if not use_wandb:
         kwargs['mode'] = 'disabled'
-    wandb_logger = WandbLogger(project='mtProt', name='AutoEncoder', log_model=True, **kwargs)
+    wandb_logger = WandbLogger(project='mtProt', name='AutoEncoder', log_model=use_wandb, **kwargs)
 
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints/autoencoder",
@@ -173,8 +173,8 @@ def main():
 #        else:
         sweep_func()
         exit()
-
-    run_model()
+    # TODO: create a scheduler for creating a downstream prediction task loss
+    run_model(accelerator='gpu', use_wandb=False, autoencoder_type='vae')
 
 
 if __name__ == "__main__":

@@ -3,6 +3,9 @@ FROM pytorchlightning/pytorch_lightning:base-conda-py3.9-torch1.12-cuda11.3.1
 
 RUN conda update -n base -c defaults conda
 
+RUN conda install -n base conda-libmamba-solver
+RUN conda config --set solver libmamba
+
 RUN conda install --yes -c conda-forge ncurses
 
 ARG sweep_file
@@ -13,6 +16,7 @@ ADD . .
 # Mitigate DNS problems
 RUN cat custom_hosts.txt >> /etc/hosts
 
+RUN conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 RUN conda install --yes --freeze-installed -c conda-forge --file requirements.txt
 
 RUN wandb login $(cat wandb_token.txt)

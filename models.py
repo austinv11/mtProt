@@ -1,4 +1,5 @@
 import math
+import sys
 
 import pytorch_lightning as pl
 import torch
@@ -81,12 +82,12 @@ class VariationalEncoder(nn.Module):
         )
 
     def reparameterize(self, mu, var):
-        eps = torch.randn_like(mu)
+        eps = torch.randn_like(mu, device=mu.device)
         z = mu + var*eps
         return z
 
     def kl_loss(self, x, x_hat, mean, log_var):
-        reproduction_loss = nn.functional.binary_cross_entropy(x_hat, x, reduction='sum')
+        reproduction_loss = nn.functional.mse_loss(x_hat, x, reduction='sum')
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
         return (reproduction_loss + KLD).to(x.device)
 
@@ -342,7 +343,7 @@ class MtEncoder(pl.LightningModule):
 
     def _kl_divergence(self, rho_pred, rho=0.05):
         # Rho is the sparsity parameter
-        rho_hat = torch.mean(F.sigmoid(rho_pred), dim=1)  # Convert to probabilities
+        rho_hat = torch.mean(torch.sigmoid(rho_pred), dim=1)  # Convert to probabilities
         rho = torch.ones_like(rho_hat) * rho
         return torch.sum(
             rho * torch.log(rho / rho_hat) + (1 - rho) * torch.log((1 - rho) / (1 - rho_hat))
@@ -394,10 +395,11 @@ class MtEncoder(pl.LightningModule):
         y_hat = self.forward(x, is_training=is_training)
         if self.encoder_type == 'vae' and is_training:
             y_hat, mu, log_var = y_hat
-            y_hat = y_hat.to(y.device)
             loss = self.vae_module.kl_loss(y, y_hat, mu, log_var).to(y.device)
+            self.print("!2: ", loss.device)
         else:
             loss = F.mse_loss(y_hat, y)
+        self.print("!3: ", y_hat.device)
 
         if self.encoder_type == "sparse" and is_training:
             # https://debuggercafe.com/sparse-autoencoders-using-kl-divergence-with-pytorch/
