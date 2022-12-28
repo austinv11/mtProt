@@ -329,8 +329,10 @@ class MtEncoder(pl.LightningModule):
 
     def forward(self, x, is_training=False):
         z = self.forward_encoder(x, is_training=is_training)
-        if self.encoder_type == 'vae' and is_training:
-            mu, log_var, z = z
+        if self.encoder_type == 'vae':
+            if is_training:
+                mu, log_var, z = z
+            z = self.vae_module.decode(z)
 
         reconstruction = self.decoder(z)
 
