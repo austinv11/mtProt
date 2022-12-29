@@ -8,7 +8,7 @@ RUN conda config --system --set solver libmamba
 
 RUN conda install --yes -c conda-forge ncurses
 
-RUN conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
+RUN conda install --yes pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 
 ARG sweep_file
 
