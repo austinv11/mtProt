@@ -1,2 +1,2 @@
-172.253.122.128 storage.googleapis.com
+142.250.188.208 storage.googleapis.com
 35.186.228.49 api.wandb.ai

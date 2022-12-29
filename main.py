@@ -49,7 +49,10 @@ def run_model(
     kwargs = dict()
     if not use_wandb:
         kwargs['mode'] = 'disabled'
-    wandb_logger = WandbLogger(project='mtProt', name='AutoEncoder', log_model=use_wandb, **kwargs)
+    wandb_logger = WandbLogger(project='mtProt',
+                               name='AutoEncoder',
+                               #log_model=use_wandb,
+                               **kwargs)
 
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints/autoencoder",
@@ -57,7 +60,7 @@ def run_model(
         verbose=True,
         save_top_k=1,
         mode="min",
-        save_last=True,
+        save_last=False,
         auto_insert_metric_name=True
     )
 
@@ -74,11 +77,10 @@ def run_model(
             verbose=True,
             check_on_train_epoch_end=True
         ))
-
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(swa_lr))
 
-    uk_biobank = UkBioBankDataModule()
+    uk_biobank = UkBioBankDataModule(batch_size=512)
     uk_biobank.prepare_data()
     uk_biobank.setup(stage='fit')
 
@@ -87,12 +89,12 @@ def run_model(
         accelerator=accelerator,
         devices=1,
         auto_select_gpus=True,
-        max_epochs=200,
-        enable_checkpointing=True,
+        max_epochs=100,
+        enable_checkpointing=False,
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
         gradient_clip_val=1.0,
-        detect_anomaly=True,
+        detect_anomaly=False,
         fast_dev_run=False,
     )
 
@@ -113,7 +115,7 @@ def run_model(
         corruption_prob=corruption_prob
     )
 
-    wandb_logger.watch(model, log='all')
+    wandb_logger.watch(model)
 
     trainer.fit(model, datamodule=uk_biobank)
 
@@ -127,18 +129,18 @@ def run_model(
 
 
 def sweep_func():
-    wandb.init(config=default_config)
+    wandb.init(allow_val_change=True)  # (config=default_config)
 
     # Sanity check configuration for mutually exclusive parameters
     optimizer = wandb.config.optimizer
     if optimizer not in ('sgd', 'rmsprop'):
-        wandb.config.update({'momentum': 0.0}, allow_val_change=True)
+        wandb.config.update({'momentum': 0.0})
 
     if optimizer not in ('adam', 'adamw'):
-        wandb.config.update({'amsgrad': 0}, allow_val_change=True)
+        wandb.config.update({'amsgrad': 0})
 
     if wandb.config.swa_enabled == 0:
-        wandb.config.update({'swa_lr': 0.0}, allow_val_change=True)
+        wandb.config.update({'swa_lr': 0.0})
 
     run_model(
         latent_size=wandb.config.latent_size,
