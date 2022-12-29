@@ -90,7 +90,7 @@ def run_model(
         devices=1,
         auto_select_gpus=True,
         max_epochs=100,
-        enable_checkpointing=False,
+        enable_checkpointing=True,
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
         gradient_clip_val=1.0,
