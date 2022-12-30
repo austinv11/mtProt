@@ -419,20 +419,15 @@ class MtEncoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-            wandb.define_metric('train_r2', summary='mean', goal='maximize')
-            wandb.define_metric('val_r2', summary='mean', goal='maximize')
-            wandb.define_metric('test_r2', summary='mean', goal='maximize')
+            wandb.define_metric('val_r2', summary='last', goal='maximize')
+            wandb.define_metric('test_r2', summary='last', goal='maximize')
+            wandb.define_metric('val_r2_epoch', step_metric='val_r2', summary='last', goal='maximize')
+            wandb.define_metric('test_r2_epoch', step_metric='test_r2', summary='last', goal='maximize')
 
         loss, mse, r2 = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
         self.log("train_mse", mse, on_step=True, on_epoch=False)
-
-        self.logger.log_metrics({"train_r2":
-            wandb.plot.bar(
-                r2, "feature", "r2",
-                title="R2 Score by Feature"
-            )}, step=self.trainer.global_step)
 
         return loss
 
