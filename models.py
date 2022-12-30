@@ -82,8 +82,8 @@ class VariationalEncoder(nn.Module):
         )
 
     def reparameterize(self, mu, var):
-        eps = Variable(var.data.new(var.size()).normal_())
-        z = mu + var*eps
+        eps = Variable(var.data.new(var.size()).normal_()).to(mu.device)
+        z = eps.mul(var).add_(mu)
         return z
 
     def kl_loss(self, x, x_hat, mean, log_var):
@@ -95,7 +95,7 @@ class VariationalEncoder(nn.Module):
     def encode(self, x):
         mu = self.mu_encoder(x)
         log_var = self.var_encoder(x)
-        z = self.reparameterize(mu, torch.exp(log_var/2))
+        z = self.reparameterize(mu, log_var.mul(0.5).exp_())
         return mu, log_var, z
 
     def decode(self, z):
@@ -303,9 +303,15 @@ class MtEncoder(pl.LightningModule):
 
     def _init_weights(self, layer):
         if type(layer) == VariationalEncoder:
-            # Encode the linear layers
-            self._init_weights(layer.mu_encoder)
-            self._init_weights(layer.var_encoder)
+            # Encode the linear layers)
+            # Init var encoder weights near 0
+            #nn.init.zeros_(layer.logvar_encoder[0].weight)
+            # Initialization performed according to https://arxiv.org/pdf/1312.6114v10.pdf
+            # Because we have bad exploding gradients with logvar due to its exponetial term
+            nn.init.normal_(layer.logvar_encoder[0].weight, 0, 0.01)
+            nn.init.normal_(layer.mu_encoder[0].weight, 0, 0.01)
+            nn.init.zeros_(layer.logvar_encoder[0].bias)
+            nn.init.zeros_(layer.mu_encoder[0].bias)
             self._init_weights(layer.decoder)
         if type(layer) == nn.Sequential:
             for l in layer:

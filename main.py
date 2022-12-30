@@ -65,7 +65,8 @@ def run_model(
             mode="min",
             patience=5,
             verbose=True,
-            check_on_train_epoch_end=True
+            check_on_train_epoch_end=True,
+            check_finite=True
         ))
         checkpoint_callback = ModelCheckpoint(
             dirpath="checkpoints/autoencoder",
