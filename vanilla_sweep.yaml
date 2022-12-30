@@ -5,7 +5,7 @@ project: mtProt
 
 name: VanillaAE
 
-method: bayes
+method: random  # TODO: bayes with smaller search space
 
 metric:
   name: val_loss

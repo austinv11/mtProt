@@ -42,34 +42,24 @@ def run_model(
         dropout=0.0,
         corruption_prob=0.0,
 
-        use_wandb=False,
+        in_sweep=False,
+        wandb_run=None,
         accelerator='cpu',
         batch_size=64
 ):
     kwargs = dict()
-    if not use_wandb:
-        kwargs['mode'] = 'disabled'
+    if not in_sweep and wandb_run is None:
+        wandb_run = wandb.init(mode='disabled')
     wandb_logger = WandbLogger(project='mtProt',
                                name='AutoEncoder',
+                               experiment=wandb_run,
                                #log_model=use_wandb,
                                **kwargs)
-
-    checkpoint_callback = ModelCheckpoint(
-        dirpath="checkpoints/autoencoder",
-        monitor="val_loss",
-        verbose=True,
-        save_top_k=1,
-        mode="min",
-        save_last=False,
-        auto_insert_metric_name=True
-    )
-
     callbacks = [
-        checkpoint_callback,
         LearningRateMonitor(logging_interval='epoch')
     ]
 
-    if not use_wandb:  # Sweeps use hyperband, so we don't need early stopping
+    if not in_sweep:  # Sweeps use hyperband, so we don't need early stopping
         callbacks.append(EarlyStopping(
             monitor="val_loss",
             mode="min",
@@ -77,6 +67,16 @@ def run_model(
             verbose=True,
             check_on_train_epoch_end=True
         ))
+        checkpoint_callback = ModelCheckpoint(
+            dirpath="checkpoints/autoencoder",
+            monitor="val_loss",
+            verbose=True,
+            save_top_k=1,
+            mode="min",
+            save_last=False,
+            auto_insert_metric_name=True
+        )
+        callbacks.append(checkpoint_callback)
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(swa_lr))
 
@@ -90,7 +90,7 @@ def run_model(
         devices=1,
         auto_select_gpus=True,
         max_epochs=100,
-        enable_checkpointing=True,
+        enable_checkpointing=not in_sweep,
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
         gradient_clip_val=1.0,
@@ -120,16 +120,17 @@ def run_model(
     trainer.fit(model, datamodule=uk_biobank)
 
     print("=====TRAINING COMPLETED=====")
-    print(f"Best model: {checkpoint_callback.best_model_path}")
-    print(f"Best model val_loss: {checkpoint_callback.best_model_score}")
+    if not in_sweep:
+        print(f"Best model: {checkpoint_callback.best_model_path}")
+        print(f"Best model val_loss: {checkpoint_callback.best_model_score}")
 
     print("=====TESTING=====")
     uk_biobank.setup(stage='test')
-    trainer.test(ckpt_path="best", datamodule=uk_biobank)
+    trainer.test(ckpt_path="best" if not in_sweep else None, datamodule=uk_biobank)
 
 
 def sweep_func():
-    wandb.init(allow_val_change=True)  # (config=default_config)
+    run = wandb.init(save_code=False, allow_val_change=True)  # (config=default_config)
 
     # Sanity check configuration for mutually exclusive parameters
     optimizer = wandb.config.optimizer
@@ -157,7 +158,8 @@ def sweep_func():
         dropout=wandb.config.dropout,
         corruption_prob=wandb.config.corruption_prob,
 
-        use_wandb=True,
+        in_sweep=True,
+        wandb_run=run,
         accelerator='gpu',
         batch_size=512
     )
@@ -178,7 +180,7 @@ def main():
         exit()
     # TODO: create a scheduler for creating a downstream prediction task loss
     #os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # For debugging errors
-    run_model(accelerator='gpu', use_wandb=False, autoencoder_type='vae')
+    run_model(accelerator='gpu', in_sweep=False, autoencoder_type='vae')
 
 
 if __name__ == "__main__":
