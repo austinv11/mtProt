@@ -305,12 +305,12 @@ class MtEncoder(pl.LightningModule):
         if type(layer) == VariationalEncoder:
             # Encode the linear layers)
             # Init var encoder weights near 0
-            #nn.init.zeros_(layer.logvar_encoder[0].weight)
+            #nn.init.zeros_(layer.var_encoder[0].weight)
             # Initialization performed according to https://arxiv.org/pdf/1312.6114v10.pdf
             # Because we have bad exploding gradients with logvar due to its exponetial term
-            nn.init.normal_(layer.logvar_encoder[0].weight, 0, 0.01)
+            nn.init.normal_(layer.var_encoder[0].weight, 0, 0.01)
             nn.init.normal_(layer.mu_encoder[0].weight, 0, 0.01)
-            nn.init.zeros_(layer.logvar_encoder[0].bias)
+            nn.init.zeros_(layer.var_encoder[0].bias)
             nn.init.zeros_(layer.mu_encoder[0].bias)
             self._init_weights(layer.decoder)
         if type(layer) == nn.Sequential:
