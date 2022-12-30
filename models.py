@@ -289,6 +289,7 @@ class MtEncoder(pl.LightningModule):
         # Metrics
         self.r2_score = torchmetrics.R2Score(num_outputs=num_features,
                                              multioutput="raw_values")
+        self.mse_score = torchmetrics.MeanSquaredError()
         self.feature_names = feature_names
         self.optimizer = optimizer
         self.lr = lr
@@ -411,17 +412,21 @@ class MtEncoder(pl.LightningModule):
             loss = self._contractive_loss(loss)
 
         r2 = self.r2_score(y_hat, y)
+        mse = self.mse_score(y_hat, y)
         r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.feature_names, r2)],
                                columns=["feature", "r2"])
-        return loss, r2_table
+        return loss, mse, r2_table
 
     def training_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-           wandb.define_metric('train_r2', summary='last')
+            wandb.define_metric('train_r2', summary='mean', goal='maximize')
+            wandb.define_metric('val_r2', summary='mean', goal='maximize')
+            wandb.define_metric('test_r2', summary='mean', goal='maximize')
 
-        loss, r2 = self.process_batch(batch, is_training=True)
+        loss, mse, r2 = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
+        self.log("train_mse", mse, on_step=True, on_epoch=False)
 
         self.logger.log_metrics({"train_r2":
             wandb.plot.bar(
@@ -432,12 +437,10 @@ class MtEncoder(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if self.trainer.global_step == 0:
-           wandb.define_metric('val_r2', summary='last')
-
-        loss, r2 = self.process_batch(batch)
+        loss, mse, r2 = self.process_batch(batch)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True)
+        self.log("val_mse", mse, on_step=False, on_epoch=True)
 
         self.logger.log_metrics({"val_r2":
             wandb.plot.bar(
@@ -448,12 +451,10 @@ class MtEncoder(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        if self.trainer.global_step == 0:
-           wandb.define_metric('test_r2', summary='last')
+        loss, mse, r2 = self.process_batch(batch)
 
-        loss, r2 = self.process_batch(batch)
-
-        self.log("test_loss", loss)
+        self.log("test_loss", loss, on_step=False, on_epoch=True)
+        self.log("test_mse", mse, on_step=False, on_epoch=True)
 
         self.logger.log_metrics({"test_r2":
             wandb.plot.bar(
