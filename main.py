@@ -89,7 +89,7 @@ def run_model(
         accelerator=accelerator,
         devices=1,
         auto_select_gpus=True,
-        max_epochs=100,
+        max_epochs=75,
         enable_checkpointing=not in_sweep,
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
@@ -115,7 +115,7 @@ def run_model(
         corruption_prob=corruption_prob
     )
 
-    wandb_logger.watch(model)
+    wandb_logger.watch(model, log_freq=50)
 
     trainer.fit(model, datamodule=uk_biobank)
 
@@ -126,7 +126,7 @@ def run_model(
 
     print("=====TESTING=====")
     uk_biobank.setup(stage='test')
-    trainer.test(ckpt_path="best" if not in_sweep else None, datamodule=uk_biobank)
+    trainer.test(model, ckpt_path="best" if not in_sweep else None, datamodule=uk_biobank)
 
 
 def sweep_func():
