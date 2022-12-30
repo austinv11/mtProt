@@ -2,8 +2,7 @@ import os.path as osp
 
 import wandb
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, StochasticWeightAveraging, \
-    DeviceStatsMonitor
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, StochasticWeightAveraging
 from pytorch_lightning.loggers import WandbLogger
 
 from datasets import UkBioBankDataModule
@@ -44,7 +43,8 @@ def run_model(
         corruption_prob=0.0,
 
         use_wandb=False,
-        accelerator='cpu'
+        accelerator='cpu',
+        batch_size=64
 ):
     kwargs = dict()
     if not use_wandb:
@@ -80,7 +80,7 @@ def run_model(
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(swa_lr))
 
-    uk_biobank = UkBioBankDataModule(batch_size=512)
+    uk_biobank = UkBioBankDataModule(batch_size=batch_size)
     uk_biobank.prepare_data()
     uk_biobank.setup(stage='fit')
 
@@ -158,7 +158,8 @@ def sweep_func():
         corruption_prob=wandb.config.corruption_prob,
 
         use_wandb=True,
-        accelerator='gpu'
+        accelerator='gpu',
+        batch_size=512
     )
 
 
@@ -176,6 +177,7 @@ def main():
         sweep_func()
         exit()
     # TODO: create a scheduler for creating a downstream prediction task loss
+    #os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # For debugging errors
     run_model(accelerator='gpu', use_wandb=False, autoencoder_type='vae')
 
 

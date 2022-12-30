@@ -1,12 +1,12 @@
 import math
-import sys
 
 import pytorch_lightning as pl
 import torch
+import torch.nn.functional as F
 import torchmetrics
 import wandb
 from torch import nn
-import torch.nn.functional as F
+from torch.autograd import Variable
 
 
 # Implemenetation of the ConcreteAutoEncoder from the paper:
@@ -82,14 +82,15 @@ class VariationalEncoder(nn.Module):
         )
 
     def reparameterize(self, mu, var):
-        eps = torch.randn_like(mu, device=mu.device)
+        eps = Variable(var.data.new(var.size()).normal_())
         z = mu + var*eps
         return z
 
     def kl_loss(self, x, x_hat, mean, log_var):
-        reproduction_loss = nn.functional.mse_loss(x_hat, x, reduction='sum')
+        reproduction_loss = nn.functional.mse_loss(x_hat, x)
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-        return (reproduction_loss + KLD).to(x.device)
+        loss = torch.mean(reproduction_loss + KLD)
+        return loss
 
     def encode(self, x):
         mu = self.mu_encoder(x)
