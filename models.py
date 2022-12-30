@@ -418,12 +418,6 @@ class MtEncoder(pl.LightningModule):
         return loss, mse, r2_table
 
     def training_step(self, batch, batch_idx):
-        if self.trainer.global_step == 0:
-            wandb.define_metric('val_r2', summary='last', goal='maximize')
-            wandb.define_metric('test_r2', summary='last', goal='maximize')
-            wandb.define_metric('val_r2_epoch', step_metric='val_r2', summary='last', goal='maximize')
-            wandb.define_metric('test_r2_epoch', step_metric='test_r2', summary='last', goal='maximize')
-
         loss, mse, r2 = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
@@ -432,6 +426,9 @@ class MtEncoder(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if self.trainer.global_step == 0:
+            wandb.define_metric('val_r2', summary='last')
+
         loss, mse, r2 = self.process_batch(batch)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True)
@@ -446,6 +443,9 @@ class MtEncoder(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
+        if self.trainer.global_step == 0:
+            wandb.define_metric('test_r2', summary='last')
+
         loss, mse, r2 = self.process_batch(batch)
 
         self.log("test_loss", loss, on_step=False, on_epoch=True)
