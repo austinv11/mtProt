@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
@@ -17,14 +18,19 @@ class PandasDataset(Dataset):
         return self.x[idx, :], self.y[idx, :]
 
 
+# TODO: Multitask DataModule (randomly split columns to tasks)
+# TODO: Check preprocessing from VAE paper
+# TODO: Can we weigh data based on when it was collected?
+
 class UkBioBankDataModule(pl.LightningDataModule):
 
-    def __init__(self, batch_size: int = 128, only_nonderived: bool = True):
+    def __init__(self, batch_size: int = 128, only_nonderived: bool = True, pseudo_targets: bool = False):
         super().__init__()
         self.filepath = "data/BioBank.xlsx"
         self.meta_filepath = "data/264079_file03.xlsx"  # Supplemental Table S1: https://www.medrxiv.org/content/10.1101/2021.09.24.21264079v2.supplementary-material
         self.batch_size = batch_size
         self.only_nonderived = only_nonderived
+        self.pseudo_targets = pseudo_targets  # Split input into fake labels
 
     def prepare_data(self):
         df = pd.read_excel(self.filepath, engine="openpyxl",
@@ -34,9 +40,24 @@ class UkBioBankDataModule(pl.LightningDataModule):
         nightengale_metadata = nightengale_metadata.drop(columns=["Biomarker", "Units", "Group", "Sub-group", "UKB Field ID", "QC Flag Field ID"])
         nightengale_metadata = nightengale_metadata.rename(columns={"Description": "BIOCHEMICAL"})
         df = df.merge(nightengale_metadata, on="BIOCHEMICAL", how="left")
+
         self.is_nonderived = (df['Type'] == "Non-derived").values.tolist()
         if self.only_nonderived:
             self.feature_names = [name for name, is_nonderived in zip(df["BIOCHEMICAL"].values.tolist(), self.is_nonderived) if is_nonderived]
+        else:
+            self.feature_names = df["BIOCHEMICAL"].values.tolist()
+
+        if self.pseudo_targets:
+            # Randomly select half of features indices as targets
+            self.target_mask = np.random.choice([False, True], size=len(self.feature_names), replace=True)
+            self.feature_mask = np.logical_not(self.target_mask)
+        else:
+            self.target_mask = [False] * len(self.feature_names)  # TODO: Real targets
+            self.feature_mask = [True] * len(self.feature_names)
+
+        self.target_names = [name for name, is_target in zip(self.feature_names, self.target_mask) if is_target]
+        self.feature_names = [name for name, is_feature in zip(self.feature_names, self.feature_mask) if is_feature]
+
         self.num_features = len(self.feature_names)
 
     def setup(self, stage=None):
@@ -45,17 +66,21 @@ class UkBioBankDataModule(pl.LightningDataModule):
                                sheet_name="Training Set")
             if self.only_nonderived:
                 df = df[df.columns[self.is_nonderived]]
+            data_df = df[df.columns[self.feature_mask]]
+            target_df = df[df.columns[self.target_mask]]
             datapoints = df.shape[0]
             train_size = int(0.85 * datapoints)
             val_size = datapoints - train_size
 
-            self.train_dataset, self.val_dataset = random_split(PandasDataset(df, df), [train_size, val_size])
+            self.train_dataset, self.val_dataset = random_split(PandasDataset(data_df, target_df), [train_size, val_size])
         if stage == "test":
             df = pd.read_excel(self.filepath, engine="openpyxl",
                                sheet_name="Testing Set")
             if self.only_nonderived:
                 df = df[df.columns[self.is_nonderived]]
-            self.test_dataset = PandasDataset(df, df)
+            data_df = df[df.columns[self.feature_mask]]
+            target_df = df[df.columns[self.target_mask]]
+            self.test_dataset = PandasDataset(data_df, target_df)
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)

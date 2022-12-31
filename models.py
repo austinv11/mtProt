@@ -64,37 +64,36 @@ class VariationalEncoder(nn.Module):
     def __init__(self,
                  input_size: int,
                  latent_size: int,
-                 activation_fn: nn.Module):
+                 kl_beta: float = 1e-2):
         super().__init__()
         self.input_size = input_size
         self.latent_size = latent_size
-        self.activation = activation_fn
+        self.kl_beta = nn.Parameter(torch.tensor(kl_beta), requires_grad=False)
         self.mu_encoder = nn.Sequential(
-            nn.Linear(input_size, latent_size),
-            self.activation
+            nn.Linear(input_size, latent_size)
         )
         self.var_encoder = nn.Sequential(
-            nn.Linear(input_size, latent_size),
-            self.activation
+            nn.Linear(input_size, latent_size)
         )
         self.decoder = nn.Sequential(
             nn.Linear(latent_size, input_size)
         )
 
-    def reparameterize(self, mu, var):
-        eps = Variable(var.data.new(var.size()).normal_()).to(mu.device)
-        z = eps.mul(var).add_(mu)
+    def reparameterize(self, mu, log_var):
+        std = log_var.mul(0.5).exp_()
+        eps = Variable(std.data.new(std.size()).normal_())
+        z = eps.mul(std).add_(mu)
         return z
 
-    def kl_loss(self, x, x_hat, mean, log_var):
-        reproduction_loss = nn.functional.mse_loss(x_hat, x)
-        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-        return reproduction_loss + KLD
+    def kl_loss(self, x_hat, x, mean, log_var):
+        reproduction_loss = F.mse_loss(x_hat, x)
+        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp(), dim=-1)
+        return torch.mean(reproduction_loss + self.kl_beta*KLD)
 
     def encode(self, x):
         mu = self.mu_encoder(x)
         log_var = self.var_encoder(x)
-        z = self.reparameterize(mu, log_var.mul(0.5).exp_())
+        z = self.reparameterize(mu, log_var)
         return mu, log_var, z
 
     def decode(self, z):
@@ -153,7 +152,6 @@ class MtEncoder(pl.LightningModule):
                 self.vae_module = VariationalEncoder(
                     input_size=num_features,
                     latent_size=latent_size,
-                    activation_fn=activation_fn
                 )
                 self._init_weights(self.vae_module)
                 self.encoder = nn.Identity()
@@ -186,7 +184,6 @@ class MtEncoder(pl.LightningModule):
                 self.vae_module = VariationalEncoder(
                         input_size=max_layer_size,
                         latent_size=latent_size,
-                        activation_fn=activation_fn
                     )
                 self._init_weights(self.vae_module)
                 self.encoder = nn.Sequential(
@@ -233,7 +230,6 @@ class MtEncoder(pl.LightningModule):
                 self.vae_module = VariationalEncoder(
                         input_size=max_layer_size//2,
                         latent_size=latent_size,
-                        activation_fn=activation_fn
                     )
                 self._init_weights(self.vae_module)
                 self.encoder = nn.Sequential(
@@ -302,15 +298,8 @@ class MtEncoder(pl.LightningModule):
 
     def _init_weights(self, layer):
         if type(layer) == VariationalEncoder:
-            # Encode the linear layers)
-            # Init var encoder weights near 0
-            #nn.init.zeros_(layer.var_encoder[0].weight)
-            # Initialization performed according to https://arxiv.org/pdf/1312.6114v10.pdf
-            # Because we have bad exploding gradients with logvar due to its exponetial term
-            nn.init.normal_(layer.var_encoder[0].weight, 0, 0.01)
-            nn.init.normal_(layer.mu_encoder[0].weight, 0, 0.01)
-            nn.init.zeros_(layer.var_encoder[0].bias)
-            nn.init.zeros_(layer.mu_encoder[0].bias)
+            self._init_weights(layer.mu_encoder)
+            self._init_weights(layer.var_encoder)
             self._init_weights(layer.decoder)
         if type(layer) == nn.Sequential:
             for l in layer:
@@ -395,29 +384,27 @@ class MtEncoder(pl.LightningModule):
 
     def process_batch(self, batch, is_training=False):
         x, y = batch
-
+        x_orig = x
         if self.corruption_prob > 0:
             x = self.corrupt(x)
 
-        y_hat = self.forward(x, is_training=is_training)
+        x_hat = self.forward(x, is_training=is_training)
         if self.encoder_type == 'vae' and is_training:
-            y_hat, mu, log_var = y_hat
-            loss = self.vae_module.kl_loss(y, y_hat, mu, log_var).to(y.device)
-            #self.print("!2: ", loss.device)
+            x_hat, mu, log_var = x_hat
+            loss = self.vae_module.kl_loss(x_hat, x_orig, mu, log_var)
         else:
-            loss = F.mse_loss(y_hat, y)
-        #self.print("!3: ", y_hat.device)
+            loss = F.mse_loss(x_hat, x_orig)
 
         if self.encoder_type == "sparse" and is_training:
             # https://debuggercafe.com/sparse-autoencoders-using-kl-divergence-with-pytorch/
-            sparsity = self._sparse_loss(x)
+            sparsity = self._sparse_loss(x_orig)
             beta = 0.001  # Weight for the sparsity penalty
             loss += beta * sparsity
         elif self.encoder_type == "contractive" and is_training:
             loss = self._contractive_loss(loss)
 
-        r2 = self.r2_score(y_hat, y)
-        mse = self.mse_score(y_hat, y)
+        r2 = self.r2_score(x_hat, x_orig)
+        mse = self.mse_score(x_hat, x_orig)
         r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.feature_names, r2)],
                                columns=["feature", "r2"])
         return loss, mse, r2_table
