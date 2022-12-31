@@ -1,7 +1,7 @@
 # Based on: https://github.com/Lightning-AI/lightning/tree/master/dockers
 FROM pytorchlightning/pytorch_lightning:base-conda-py3.9-torch1.12-cuda11.3.1
 
-RUN conda update -n base -c defaults conda
+RUN conda update --yes -n base -c defaults conda
 
 RUN conda install --yes -n base conda-libmamba-solver
 RUN conda config --system --set solver libmamba
@@ -18,7 +18,7 @@ ADD . .
 RUN cat custom_hosts.txt >> /etc/hosts
 
 # Install dependencies
-RUN conda install --yes --freeze-installed -c conda-forge --file requirements.txt
+RUN conda install --yes --freeze-installed -c pytorch -c nvidia -c conda-forge --file requirements.txt
 
 RUN wandb login $(cat wandb_token.txt)
 

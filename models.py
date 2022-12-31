@@ -89,8 +89,7 @@ class VariationalEncoder(nn.Module):
     def kl_loss(self, x, x_hat, mean, log_var):
         reproduction_loss = nn.functional.mse_loss(x_hat, x)
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-        loss = torch.mean(reproduction_loss + KLD)
-        return loss
+        return reproduction_loss + KLD
 
     def encode(self, x):
         mu = self.mu_encoder(x)
