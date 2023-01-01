@@ -8,6 +8,8 @@ import wandb
 from torch import nn
 from torch.autograd import Variable
 
+from losses import vae_kl_loss, sparse_loss, contractive_loss, MultiTaskLossScheduler, AutoEncoderLossOnly
+
 
 # Implemenetation of the ConcreteAutoEncoder from the paper:
 # https://arxiv.org/abs/1901.09346
@@ -63,12 +65,10 @@ class ConcreteEncoder(nn.Module):
 class VariationalEncoder(nn.Module):
     def __init__(self,
                  input_size: int,
-                 latent_size: int,
-                 kl_beta: float = 1e-2):
+                 latent_size: int):
         super().__init__()
         self.input_size = input_size
         self.latent_size = latent_size
-        self.kl_beta = nn.Parameter(torch.tensor(kl_beta), requires_grad=False)
         self.mu_encoder = nn.Sequential(
             nn.Linear(input_size, latent_size)
         )
@@ -84,11 +84,6 @@ class VariationalEncoder(nn.Module):
         eps = Variable(std.data.new(std.size()).normal_())
         z = eps.mul(std).add_(mu)
         return z
-
-    def kl_loss(self, x_hat, x, mean, log_var):
-        reproduction_loss = F.mse_loss(x_hat, x)
-        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp(), dim=-1)
-        return torch.mean(reproduction_loss + self.kl_beta*KLD)
 
     def encode(self, x):
         mu = self.mu_encoder(x)
@@ -106,9 +101,12 @@ class VariationalEncoder(nn.Module):
 
 
 class MtEncoder(pl.LightningModule):
+
     def __init__(self,
-                 num_features: int,
-                 feature_names: list[str],
+                 num_input: int,
+                 input_names: list[str],
+                 num_output: int,
+                 output_names: list[str],
                  lr: float = 1e-3,
                  momentum: float = 0.0,
                  weight_decay: float = 0.0,
@@ -120,11 +118,14 @@ class MtEncoder(pl.LightningModule):
                  optimizer: str = "adam",
                  encoder_type: str = "vanilla",
                  dropout: float = 0.0,
-                 corruption_prob: float = 0.0
+                 corruption_prob: float = 0.0,
+                 loss_scheduler: MultiTaskLossScheduler = AutoEncoderLossOnly(),
                  ):
         super().__init__()
 
         self.activation = activation
+        self.loss_scheduler = loss_scheduler
+        self.dropout = dropout
 
         if dropout == 0:
             dropout_cls = nn.Identity
@@ -141,151 +142,59 @@ class MtEncoder(pl.LightningModule):
             activation_fn = nn.GELU()
         elif activation == "selu":
             activation_fn = nn.SELU()
-
-        if num_layers == 1:
-            if encoder_type == 'concrete':
-                self.encoder = ConcreteEncoder(
-                    input_size=num_features,
-                    K=latent_size,
-                )
-            elif encoder_type == 'vae':
-                self.vae_module = VariationalEncoder(
-                    input_size=num_features,
-                    latent_size=latent_size,
-                )
-                self._init_weights(self.vae_module)
-                self.encoder = nn.Identity()
-            else:
-                self.encoder = nn.Sequential(
-                    self._init_weights(nn.Linear(num_features, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, latent_size)),
-                    activation_fn
-                )
-
-            if encoder_type == 'vae':  # VAE has a built in decoder layer
-                self.decoder = nn.Identity()
-            else:
-                self.decoder = nn.Sequential(
-                    self._init_weights(nn.Linear(latent_size, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, num_features))
-                )
-
-        elif num_layers == 2:
-            if encoder_type == 'concrete':
-                self.encoder = ConcreteEncoder(
-                    input_size=num_features,
-                    K=latent_size,
-                )
-            elif encoder_type == 'vae':
-                self.vae_module = VariationalEncoder(
-                        input_size=max_layer_size,
-                        latent_size=latent_size,
-                    )
-                self._init_weights(self.vae_module)
-                self.encoder = nn.Sequential(
-                    self._init_weights(nn.Linear(num_features, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn
-                )
-            else:
-                self.encoder = nn.Sequential(
-                    self._init_weights(nn.Linear(num_features, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 2, latent_size)),
-                    activation_fn
-                )
-
-            if encoder_type == 'vae':  # VAE has a built in decoder layer
-                self.decoder = nn.Sequential(
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, num_features))
-                )
-            else:
-                self.decoder = nn.Sequential(
-                    self._init_weights(nn.Linear(latent_size, max_layer_size // 2)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, num_features))
-                )
-
-        elif num_layers == 3:
-            if encoder_type == 'concrete':
-                self.encoder = ConcreteEncoder(
-                    input_size=num_features,
-                    K=latent_size,
-                )
-            elif encoder_type == 'vae':
-                self.vae_module = VariationalEncoder(
-                        input_size=max_layer_size//2,
-                        latent_size=latent_size,
-                    )
-                self._init_weights(self.vae_module)
-                self.encoder = nn.Sequential(
-                    self._init_weights(nn.Linear(num_features, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, max_layer_size//2)),
-                    dropout_cls(dropout),
-                    activation_fn
-                )
-            else:
-                self.encoder = nn.Sequential(
-                    self._init_weights(nn.Linear(num_features, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, max_layer_size // 2)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size // 4)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 4, latent_size)),
-                    activation_fn
-                )
-
-            if encoder_type == 'vae':  # VAE has a built in decoder layer
-                self.decoder = nn.Sequential(
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size//2, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, num_features))
-                )
-            else:
-                self.decoder = nn.Sequential(
-                    self._init_weights(nn.Linear(latent_size, max_layer_size // 4)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 4, max_layer_size // 2)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size // 2, max_layer_size)),
-                    dropout_cls(dropout),
-                    activation_fn,
-                    self._init_weights(nn.Linear(max_layer_size, num_features))
-                )
-
         else:
-            raise ValueError("num_layers must be 1, 2, or 3")
+            raise ValueError(f"Unknown activation function {activation}")
+
+        linear_layer_latent = max_layer_size//(2**(num_layers-1)) if encoder_type == "vae" else latent_size
+        if encoder_type == "concrete":
+            self.encoder = ConcreteEncoder(
+                input_size=num_input,
+                K=latent_size,
+            )
+        else:
+            self.encoder = self._make_encoder(
+                latent_size=linear_layer_latent,
+                num_features=num_input,
+                num_layers=num_layers,
+                max_layer_size=max_layer_size,
+                dropout_cls=dropout_cls,
+                activation_fn=activation_fn
+            )
+            self._init_weights(self.encoder)
+
+        if encoder_type == "vae":
+            self.vae_module = VariationalEncoder(
+                input_size=linear_layer_latent,
+                latent_size=latent_size
+            )
+            self._init_weights(self.vae_module)
+
+        self.decoder = self._make_decoder(
+            latent_size=latent_size,
+            num_features=num_input,
+            num_layers=num_layers,
+            max_layer_size=max_layer_size,
+            dropout_cls=dropout_cls,
+            activation_fn=activation_fn
+        )
+        self._init_weights(self.decoder)
+
+        self.regression_decoder = self._make_decoder(
+            latent_size=latent_size,
+            num_features=num_output,
+            num_layers=num_layers,
+            max_layer_size=max_layer_size,
+            dropout_cls=dropout_cls,
+            activation_fn=activation_fn
+        )
+        self._init_weights(self.regression_decoder)
 
         # Metrics
-        self.r2_score = torchmetrics.R2Score(num_outputs=num_features,
+        self.r2_score = torchmetrics.R2Score(num_outputs=num_input,
                                              multioutput="raw_values")
         self.mse_score = torchmetrics.MeanSquaredError()
-        self.feature_names = feature_names
+        self.feature_names = input_names
+        self.target_names = output_names
         self.optimizer = optimizer
         self.lr = lr
         self.momentum = momentum
@@ -295,6 +204,44 @@ class MtEncoder(pl.LightningModule):
         self.corruption_prob = corruption_prob
 
         self.save_hyperparameters()
+
+    def _make_decoder(self,
+                      latent_size,
+                      num_features,
+                      num_layers,
+                      max_layer_size,
+                      dropout_cls,
+                      activation_fn):
+        layers = []
+        for i in range(num_layers-1, -1, -1):
+            in_size = latent_size if i == num_layers-1 else max_layer_size // (2 ** (i))
+            out_size = num_features if i == 0 else max_layer_size // (2 ** (i-1))
+            layers.append(
+                self._init_weights(nn.Linear(in_size, out_size))
+            )
+            if i != 0:
+                layers.append(dropout_cls(self.dropout))
+                layers.append(activation_fn)
+        return nn.Sequential(*layers)
+
+    def _make_encoder(self,
+                      latent_size,
+                      num_features,
+                      num_layers,
+                      max_layer_size,
+                      dropout_cls,
+                      activation_fn):
+        layers = []
+        for i in range(num_layers):
+            in_size = num_features if i == 0 else max_layer_size // (2 ** (i - 1))
+            out_size = latent_size if i == num_layers - 1 else max_layer_size // (2 ** i)
+            layers.append(
+                self._init_weights(nn.Linear(in_size, out_size))
+            )
+            if i != num_layers - 1:
+                layers.append(dropout_cls(self.dropout))
+                layers.append(activation_fn)
+        return nn.Sequential(*layers)
 
     def _init_weights(self, layer):
         if type(layer) == VariationalEncoder:
@@ -332,46 +279,11 @@ class MtEncoder(pl.LightningModule):
             z = self.vae_module.decode(z)
 
         reconstruction = self.decoder(z)
+        regression = self.regression_decoder(z)
 
         if self.encoder_type == 'vae' and is_training:
-            return reconstruction, mu, log_var
-        return reconstruction
-
-    def _kl_divergence(self, rho_pred, rho=0.05):
-        # Rho is the sparsity parameter
-        rho_hat = torch.mean(torch.sigmoid(rho_pred), dim=1)  # Convert to probabilities
-        rho = torch.ones_like(rho_hat) * rho
-        return torch.sum(
-            rho * torch.log(rho / rho_hat) + (1 - rho) * torch.log((1 - rho) / (1 - rho_hat))
-        )
-
-    def _get_relevant_children(self, include_decoder=True):
-        relevant_children = []
-        for child in self.encoder.children():
-            if type(child) not in (nn.AlphaDropout, nn.Dropout, nn.Identity):
-               yield child
-        if include_decoder:
-            for child in self.decoder.children():
-                if type(child) not in (nn.AlphaDropout, nn.Dropout, nn.Identity):
-                    yield child
-
-    def _sparse_loss(self, values, rho=0.05):
-        # Rho is the sparsity parameter
-        loss = 0
-        for child in self._get_relevant_children():
-            values = child(values)
-            loss += self._kl_divergence(values, rho=rho)
-        return loss
-
-    def _contractive_loss(self, mse, lambda_=1e-4, reduction=torch.sum):
-        # https://github.com/AlexPasqua/Autoencoders/blob/main/src/custom_losses.py
-        # https://github.com/avijit9/Contractive_Autoencoder_in_Pytorch/blob/master/CAE_pytorch.py
-        # Lambda is the regularization parameter
-        # reduction can be torch.mean or torch.sum
-        encoder_units = reversed([child for child in self._get_relevant_children(include_decoder=False) if isinstance(child, nn.Linear)])
-        encoder_weights = [child.weight for child in encoder_units]
-        contractive_loss = torch.mean(mse + (lambda_ * torch.norm(torch.linalg.multi_dot(encoder_weights))), 0)
-        return reduction(contractive_loss)
+            return regression, reconstruction, mu, log_var
+        return regression, reconstruction, None, None
 
     def corrupt(self, x):
         # Half corruption with zeroes
@@ -383,52 +295,86 @@ class MtEncoder(pl.LightningModule):
         return x
 
     def process_batch(self, batch, is_training=False):
+        max_epochs = self.trainer.max_epochs
+        curr_epoch = self.current_epoch
+
         x, y = batch
+
+        # Ignore nan values for loss calculation
+        x_nan_mask = torch.isnan(x)
+        y_nan_mask = torch.isnan(y)
+        x = torch.nan_to_num(x, 0)
+        y = torch.nan_to_num(y, 0)
+
         x_orig = x
+
         if self.corruption_prob > 0:
             x = self.corrupt(x)
 
-        x_hat = self.forward(x, is_training=is_training)
+        y_hat, x_hat, mu, log_var = self.forward(x, is_training=is_training)
+
+        # Replace nan values with predicted values to prevent propagating loss
+        x_orig = x_orig*(torch.logical_not(x_nan_mask)) + x_hat*(x_nan_mask)
+        y = y*(torch.logical_not(y_nan_mask)) + y_hat*(y_nan_mask)
+
         if self.encoder_type == 'vae' and is_training:
-            x_hat, mu, log_var = x_hat
-            loss = self.vae_module.kl_loss(x_hat, x_orig, mu, log_var)
+            autoencoder_loss = vae_kl_loss(x_hat, x_orig, mu, log_var)
         else:
-            loss = F.mse_loss(x_hat, x_orig)
+            autoencoder_loss = F.mse_loss(x_hat, x_orig)
+        regression_loss = F.mse_loss(y_hat, y)
 
         if self.encoder_type == "sparse" and is_training:
             # https://debuggercafe.com/sparse-autoencoders-using-kl-divergence-with-pytorch/
-            sparsity = self._sparse_loss(x_orig)
+            sparsity = sparse_loss(self, x_orig)
             beta = 0.001  # Weight for the sparsity penalty
-            loss += beta * sparsity
+            autoencoder_loss += beta * sparsity
         elif self.encoder_type == "contractive" and is_training:
-            loss = self._contractive_loss(loss)
+            autoencoder_loss = contractive_loss(self, autoencoder_loss)
 
-        r2 = self.r2_score(x_hat, x_orig)
-        mse = self.mse_score(x_hat, x_orig)
-        r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.feature_names, r2)],
+        total_loss = self.loss_scheduler.loss(curr_epoch, max_epochs, autoencoder_loss, regression_loss)
+
+        autoencoder_r2 = self.r2_score(x_hat, x_orig)
+        regression_r2 = self.r2_score(y_hat, y)
+        autoencoder_mse = self.mse_score(x_hat, x_orig)
+        regression_mse = self.mse_score(y_hat, y)
+        autoencoder_r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.feature_names, autoencoder_r2)],
                                columns=["feature", "r2"])
-        return loss, mse, r2_table
+        regression_r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.target_names, regression_r2)],
+                                 columns=["feature", "r2"])
+        return total_loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table
 
     def training_step(self, batch, batch_idx):
-        loss, mse, r2 = self.process_batch(batch, is_training=True)
+        loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
-        self.log("train_mse", mse, on_step=True, on_epoch=False)
+        self.log("train_autoencoder_loss", autoencoder_loss, on_step=True, on_epoch=False)
+        self.log("train_regression_loss", regression_loss, on_step=True, on_epoch=False)
+        self.log("train_autoencoder_mse", autoencoder_mse, on_step=True, on_epoch=False)
+        self.log("train_regression_mse", regression_mse, on_step=True, on_epoch=False)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-            wandb.define_metric('val_r2', summary='last')
+            wandb.define_metric('val_autoencoder_r2', summary='last')
+            wandb.define_metric('val_regression_r2', summary='last')
 
-        loss, mse, r2 = self.process_batch(batch)
+        loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True)
-        self.log("val_mse", mse, on_step=False, on_epoch=True)
+        self.log("val_autoencoder_loss", autoencoder_loss, on_step=False, on_epoch=True)
+        self.log("val_regression_loss", regression_loss, on_step=False, on_epoch=True)
+        self.log("val_autoencoder_mse", autoencoder_mse, on_step=False, on_epoch=True)
+        self.log("val_regression_mse", regression_mse, on_step=False, on_epoch=True)
 
-        self.logger.log_metrics({"val_r2":
+        self.logger.log_metrics({"val_autoencoder_r2":
             wandb.plot.bar(
-                r2, "feature", "r2",
+                autoencoder_r2_table, "feature", "r2",
+                title="R2 Score by Feature"
+            )}, step=self.trainer.global_step)
+        self.logger.log_metrics({"val_regression_r2":
+            wandb.plot.bar(
+                regression_r2_table, "feature", "r2",
                 title="R2 Score by Feature"
             )}, step=self.trainer.global_step)
 
@@ -436,16 +382,25 @@ class MtEncoder(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         if self.trainer.global_step == 0:
-            wandb.define_metric('test_r2', summary='last')
+            wandb.define_metric('test_autoencoder_r2', summary='last')
+            wandb.define_metric('test_regression_r2', summary='last')
 
-        loss, mse, r2 = self.process_batch(batch)
+        loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch)
 
         self.log("test_loss", loss, on_step=False, on_epoch=True)
-        self.log("test_mse", mse, on_step=False, on_epoch=True)
+        self.log("test_autoencoder_loss", autoencoder_loss, on_step=False, on_epoch=True)
+        self.log("test_regression_loss", regression_loss, on_step=False, on_epoch=True)
+        self.log("test_autoencoder_mse", autoencoder_mse, on_step=False, on_epoch=True)
+        self.log("test_regression_mse", regression_mse, on_step=False, on_epoch=True)
 
-        self.logger.log_metrics({"test_r2":
+        self.logger.log_metrics({"test_autoencoder_r2":
             wandb.plot.bar(
-                r2, "feature", "r2",
+                autoencoder_r2_table, "feature", "r2",
+                title="R2 Score by Feature"
+            )}, step=self.trainer.global_step)
+        self.logger.log_metrics({"test_regression_r2":
+            wandb.plot.bar(
+                regression_r2_table, "feature", "r2",
                 title="R2 Score by Feature"
             )}, step=self.trainer.global_step)
 

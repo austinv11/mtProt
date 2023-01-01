@@ -81,7 +81,11 @@ def run_model(
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(swa_lr))
 
-    uk_biobank = UkBioBankDataModule(batch_size=batch_size)
+    uk_biobank = UkBioBankDataModule(
+        batch_size=batch_size,
+        only_nonderived=True,
+        pseudo_targets=False
+    )
     uk_biobank.prepare_data()
     uk_biobank.setup(stage='fit')
 
@@ -95,13 +99,15 @@ def run_model(
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
         gradient_clip_val=1.0,
-        detect_anomaly=False,
+        detect_anomaly=True,
         fast_dev_run=False,
     )
 
     model = MtEncoder(
-        num_features=uk_biobank.num_features,
-        feature_names=uk_biobank.feature_names,
+        num_input=uk_biobank.num_features,
+        input_names=uk_biobank.feature_names,
+        num_output=uk_biobank.num_targets,
+        output_names=uk_biobank.target_names,
         lr=learning_rate,
         momentum=momentum,
         weight_decay=weight_decay,

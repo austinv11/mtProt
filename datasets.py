@@ -56,9 +56,12 @@ class UkBioBankDataModule(pl.LightningDataModule):
             self.feature_mask = [True] * len(self.feature_names)
 
         self.target_names = [name for name, is_target in zip(self.feature_names, self.target_mask) if is_target]
+        if len(self.target_names) == 0:
+            self.target_names = ["None"]
         self.feature_names = [name for name, is_feature in zip(self.feature_names, self.feature_mask) if is_feature]
 
         self.num_features = len(self.feature_names)
+        self.num_targets = len(self.target_names)
 
     def setup(self, stage=None):
         if stage is None or stage == "fit":
@@ -68,6 +71,8 @@ class UkBioBankDataModule(pl.LightningDataModule):
                 df = df[df.columns[self.is_nonderived]]
             data_df = df[df.columns[self.feature_mask]]
             target_df = df[df.columns[self.target_mask]]
+            if target_df.shape[1] == 0:
+                target_df = pd.DataFrame(np.zeros((data_df.shape[0], 1)))
             datapoints = df.shape[0]
             train_size = int(0.85 * datapoints)
             val_size = datapoints - train_size
@@ -80,6 +85,8 @@ class UkBioBankDataModule(pl.LightningDataModule):
                 df = df[df.columns[self.is_nonderived]]
             data_df = df[df.columns[self.feature_mask]]
             target_df = df[df.columns[self.target_mask]]
+            if target_df.shape[1] == 0:
+                target_df = pd.DataFrame(np.zeros((data_df.shape[0], 1)))
             self.test_dataset = PandasDataset(data_df, target_df)
 
     def train_dataloader(self):
