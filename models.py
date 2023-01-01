@@ -170,7 +170,7 @@ class MtEncoder(pl.LightningModule):
             self._init_weights(self.vae_module)
 
         self.decoder = self._make_decoder(
-            latent_size=latent_size,
+            latent_size=linear_layer_latent,
             num_features=num_input,
             num_layers=num_layers,
             max_layer_size=max_layer_size,
