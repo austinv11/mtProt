@@ -5,7 +5,7 @@ project: mtProt
 
 name: SparseAE
 
-method: random  # TODO: bayes with smaller search space
+method: bayes  # TODO: bayes with smaller search space
 
 metric:
   name: val_loss
@@ -27,22 +27,22 @@ parameters:
     values:
       - adamw # Best loss
       - adam
-      - sgd
+      #- sgd
       - adamax # Performs poorly
       - radam
-      - rmsprop
+      #- rmsprop
 
   # higher = worse loss
   weight_decay:
     distribution: categorical
     values:
       - 0
-      - 0.001
-      - 0.01
+      #- 0.001
+      #- 0.01
       - 0.1
-      - 0.25
-      - 0.5
-      - 0.9
+      #- 0.25
+      #- 0.5
+      #- 0.9
 
   # higher = worse loss
   max_layer_size:
@@ -55,7 +55,7 @@ parameters:
     values:
       - relu
       - leaky_relu
-      - gelu
+      #- gelu
       - selu # Performs poorly
 
   learning_rate:
@@ -78,11 +78,8 @@ parameters:
     distribution: categorical
     values:
       - 0.0
-      - 0.05
       - 0.1
-      - 0.15
       - 0.25
-      - 0.4
 
   # Enabled is worse loss
   swa_enabled:
@@ -93,8 +90,6 @@ parameters:
   swa_lr:
     distribution: categorical
     values:
-      - 0.00001
-      - 0.0001
       - 0.001
       - 0.01
       - 0.1
@@ -116,7 +111,7 @@ parameters:
   latent_size: # Higher = worse loss
     distribution: int_uniform
     min: 4
-    max: 64
+    max: 32
 
   # lower = better loss
   corruption_prob:
@@ -125,5 +120,3 @@ parameters:
       - 0
       - 0.1
       - 0.2
-      - 0.3
-      - 0.4

@@ -5,7 +5,7 @@ project: mtProt
 
 name: VAE
 
-method: random  # TODO: bayes with smaller search space
+method: bayes  # TODO: bayes with smaller search space
 
 metric:
   name: val_loss
@@ -26,25 +26,25 @@ parameters:
     distribution: categorical
     values:
       - adamw # Best loss
-      - adam
+      #- adam
       - sgd
-      - adamax # Performs poorly
+      #- adamax # Performs poorly
       - radam
-      - rmsprop
+      #- rmsprop
 
   # higher = worse loss
   weight_decay:
     distribution: categorical
     values:
       - 0
-      - 0.001
-      - 0.01
+      #- 0.001
+      #- 0.01
       - 0.1
-      - 0.25
-      - 0.5
+      #- 0.25
+      #- 0.5
       - 0.9
 
-  # higher = worse loss
+  # higher = better loss
   max_layer_size:
     distribution: int_uniform
     min: 64
@@ -56,12 +56,12 @@ parameters:
       - relu
       - leaky_relu
       - gelu
-      - selu # Performs poorly
+      #- selu # Performs poorly
 
   learning_rate:
     distribution: categorical
     values:
-      - 0.00001
+      #- 0.00001
       - 0.0001
       - 0.001
       - 0.01
@@ -78,23 +78,19 @@ parameters:
     distribution: categorical
     values:
       - 0.0
-      - 0.05
       - 0.1
-      - 0.15
       - 0.25
-      - 0.4
 
   # Enabled is worse loss
   swa_enabled:
     distribution: int_uniform
     min: 0
     max: 1
-  # Higher values = worse loss
+
+  # Higher values = better loss
   swa_lr:
     distribution: categorical
     values:
-      - 0.00001
-      - 0.0001
       - 0.001
       - 0.01
       - 0.1
@@ -111,12 +107,12 @@ parameters:
   num_layers:
     distribution: int_uniform
     min: 1
-    max: 5
+    max: 3
 
   latent_size: # Higher = worse loss
     distribution: int_uniform
     min: 4
-    max: 64
+    max: 32
 
   # lower = better loss
   corruption_prob:
@@ -125,5 +121,3 @@ parameters:
       - 0
       - 0.1
       - 0.2
-      - 0.3
-      - 0.4

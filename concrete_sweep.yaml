@@ -5,7 +5,7 @@ project: mtProt
 
 name: ConcreteAE
 
-method: random  # TODO: bayes with smaller search space
+method: bayes  # TODO: bayes with smaller search space
 
 metric:
   name: val_loss
@@ -28,20 +28,20 @@ parameters:
       - adamw # Performs poorly?
       - adam
       - sgd
-      - adamax #Performs poorly
-      - radam
-      - rmsprop
+      #- adamax #Performs poorly
+      #- radam
+      #- rmsprop
 
   weight_decay:
     distribution: categorical
     values:
       - 0
-      - 0.001
-      - 0.01
+      #- 0.001
+      #- 0.01
       - 0.1
-      - 0.25
-      - 0.5
-      - 0.9
+      #- 0.25
+      #- 0.5
+      #- 0.9
 
   # higher = worse loss
   max_layer_size:
@@ -54,7 +54,7 @@ parameters:
     values:
       - relu
       - leaky_relu
-      - gelu
+      #- gelu
       - selu # Performs poorly
 
   learning_rate:
@@ -77,23 +77,19 @@ parameters:
     distribution: categorical
     values:
       - 0.0
-      - 0.05
       - 0.1
-      - 0.15
       - 0.25
-      - 0.4
 
   # Enabled is worse loss
   swa_enabled:
     distribution: int_uniform
     min: 0
     max: 1
+
   # Higher values = worse loss
   swa_lr:
     distribution: categorical
     values:
-      - 0.00001
-      - 0.0001
       - 0.001
       - 0.01
       - 0.1
@@ -102,7 +98,7 @@ parameters:
   momentum:
     distribution: categorical
     values:
-      - 0.0
+      #- 0.0
       - 0.9
       - 0.99
       - 0.999
@@ -110,12 +106,12 @@ parameters:
   num_layers:
     distribution: int_uniform
     min: 1
-    max: 5
+    max: 3
 
   latent_size: # Higher = worse loss
     distribution: int_uniform
     min: 4
-    max: 64
+    max: 32
 
   # lower = better loss
   corruption_prob:
@@ -124,5 +120,3 @@ parameters:
       - 0
       - 0.1
       - 0.2
-      - 0.3
-      - 0.4
