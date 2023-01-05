@@ -1,3 +1,5 @@
+from typing import TypeVar, Literal, Tuple, List
+
 import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
@@ -16,6 +18,61 @@ class PandasDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.x[idx, :], self.y[idx, :]
+
+
+def ukbiobank_data_loader(batch_size: int,
+                          train_proportion: float,
+                          feature_columns: List[str],
+                          target_columns: List[str],
+                          filepath: str = "data/BioBank.xlsx") -> Tuple[DataLoader, DataLoader, DataLoader]:
+    train_df = pd.read_excel(filepath, engine="openpyxl", sheet_name="Training Set")
+    test_df = pd.read_excel(filepath, engine="openpyxl", sheet_name="Testing Set")
+
+    if len(target_columns) == 0:
+        target_columns = feature_columns
+
+    train_features_df = train_df[feature_columns]
+    train_targets_df = train_df[target_columns]
+    test_features_df = test_df[feature_columns]
+    test_targets_df = test_df[target_columns]
+
+    train_size = int(train_proportion * train_features_df.shape[0])
+    val_size = train_features_df.shape[0] - train_size
+
+    train_dataset, val_dataset = random_split(PandasDataset(train_features_df, train_targets_df), [train_size, val_size])
+    test_dataset = PandasDataset(test_features_df, test_targets_df)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+
+def load_summarized_experiment(file: str):
+    assay = pd.read_excel(file, engine="openpyxl", sheet_name="assay")
+    assay = assay.set_index(assay.columns.values[0]).T
+    rowData = pd.read_excel(file, engine="openpyxl", sheet_name="rowData")
+    rowData = rowData.set_index(rowData.columns.values[0])
+    colData = pd.read_excel(file, engine="openpyxl", sheet_name="colData")
+    colData = colData.set_index(colData.columns.values[0])
+
+
+
+def adni_data_loader(batch_size: int,
+                     train_proportion: float,
+                     feature_columns: List[str],
+                     target_columns: List[str],
+                     filepath: str = "data/Neuro-Datasets/ADNI_Nightingale_Baseline_preprocessed.xlsx") -> Tuple[DataLoader, DataLoader, DataLoader]:
+    ...
+
+
+def tulsa_data_loader(batch_size: int,
+                      train_proportion: float,
+                      feature_columns: List[str],
+                      target_columns: List[str],
+                      filepath: str = "data/Neuro-Datasets/Tulsa_Nightingale_Preprocessed.xlsx") -> Tuple[DataLoader, DataLoader, DataLoader]:
+    ...
 
 
 # TODO: Multitask DataModule (randomly split columns to tasks)
