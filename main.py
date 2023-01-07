@@ -5,7 +5,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, StochasticWeightAveraging
 from pytorch_lightning.loggers import WandbLogger
 
-from datasets import UkBioBankDataModule
+from datasets import NightingaleDataModule
 from models import MtEncoder
 
 default_config = dict(
@@ -81,13 +81,13 @@ def run_model(
     if stochastic_weight_averaging:
         callbacks.append(StochasticWeightAveraging(swa_lr))
 
-    uk_biobank = UkBioBankDataModule(
+    dataset = NightingaleDataModule(
+        on_gpu=accelerator == 'gpu',
         batch_size=batch_size,
-        only_nonderived=True,
         pseudo_targets=False
     )
-    uk_biobank.prepare_data()
-    uk_biobank.setup(stage='fit')
+    dataset.prepare_data()
+    dataset.setup(stage='fit')
 
     trainer = Trainer(
         logger=wandb_logger,
@@ -99,15 +99,14 @@ def run_model(
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
         gradient_clip_val=1.0,
-        detect_anomaly=True,
+        detect_anomaly=False,
         fast_dev_run=False,
+        multiple_trainloader_mode='max_size_cycle',  # 'max_size_cycle' or 'min_size', max_size_cycle = re-iterate over smaller data loaders, min_size = stop when smallest data loader is exhausted
     )
 
     model = MtEncoder(
-        num_input=uk_biobank.num_features,
-        input_names=uk_biobank.feature_names,
-        num_output=uk_biobank.num_targets,
-        output_names=uk_biobank.target_names,
+        input_names=dataset.feature_names,
+        output_names=dataset.target_names,
         lr=learning_rate,
         momentum=momentum,
         weight_decay=weight_decay,
@@ -124,7 +123,7 @@ def run_model(
 
     wandb_logger.watch(model, log_freq=50)
 
-    trainer.fit(model, datamodule=uk_biobank)
+    trainer.fit(model, datamodule=dataset)
 
     print("=====TRAINING COMPLETED=====")
     if not in_sweep:
@@ -132,8 +131,8 @@ def run_model(
         print(f"Best model val_loss: {checkpoint_callback.best_model_score}")
 
     print("=====TESTING=====")
-    uk_biobank.setup(stage='test')
-    trainer.test(model, ckpt_path="best" if not in_sweep else None, datamodule=uk_biobank)
+    dataset.setup(stage='test')
+    trainer.test(model, ckpt_path="best" if not in_sweep else None, datamodule=dataset)
 
 
 def sweep_func():

@@ -1,7 +1,6 @@
 # conda install -c conda-forge r-base r-essentials r-tidyverse r-writexl r-devtools
 # Rscript --vanilla -e "devtools::install_github('krumsieklab/maplet', subdir='maplet')"
 library(dplyr)
-library(writexl)
 library(SummarizedExperiment)
 library(maplet)
 library(magrittr)
@@ -13,102 +12,63 @@ load(file = file.path)
 # Randomly insert NA
 RANDOM_NA <- FALSE
 
-# TODO: run on server
+# Based on https://github.com/krumsieklab/ad-adni-Xplatforms/blob/main/nightingale_lipoproteins_preprocessing.R
+# and https://github.com/krumsieklab/ad-brain-landscape/blob/c39bf85fb16fb75238e62be4c325fe4b9b37a4c8/1_metabolomics_preprocessing.R
 D2 <- D %>%
   mt_pre_zero_to_na() %>%
-  mt_pre_filter_missingness(feat_max = 0.4, samp_max = 0.4) %>%
+  mt_pre_filter_missingness(feat_max = 0.4) %>%
+  mt_pre_filter_missingness(samp_max = 0.4) %>%
+  mt_anno_missingness(anno_type = "features", out_col = "missing") %>%
   mt_pre_trans_log() %>%
-  #mt_pre_impute_knn() %>%
-  mt_pre_impute_min() %>%
-  mt_pre_outlier_lof() %>%
-  mt_pre_outlier_to_na() %>%
-  #mt_pre_impute_knn()
-  mt_pre_impute_min()
+  mt_pre_impute_min() %>% #mt_pre_impute_knn() %>%
+  # Combine duplicates
+  #mt_modify_avg_samples("eid") %>%  # Note this function fails since there are no duplicate samples
+  # Outlier
+  # Sample outlier
+  mt_pre_outlier_lof(seq_k = c(5, 10, 20, 30, 40, 50)) %>%
+  # Metabolomic outlier
+  mt_pre_outlier_to_na(use_quant=TRUE, quant_thresh =0.025) %>%
+  mt_pre_impute_min() #mt_pre_impute_knn()
 
 mt_write_se_xls(D2, "data/BioBank_export.xlsx")
 
-info <- elementMetadata(D2)
-fields <- info$title  # field_id2
-names <- rownames(info)
-group <- info$Group
-subgroup <- info$Subgroup
+# Cross experiment integration
+# Based on mtVAE: https://www.nature.com/articles/s42003-022-03579-3#Sec10
+adni <- mt_load_se_xls(file = "data/Neuro-Datasets/ADNI_Nightingale_Baseline_preprocessed.xlsx")
+tulsa <- mt_load_se_xls(file = "data/Neuro-Datasets/Tulsa_Nightingale_Preprocessed.xlsx")
 
-metaDf <- data.frame(
-  COMP_IDstr = fields,
-  BIOCHEMICAL = names,
-  SUPER_PATHWAY = group,
-  SUB_PATHWAY = subgroup
-)
+# biobank minimum age is 40
+uniform_biobank <- D2 %>%
+  mt_modify_filter_samples(Age.at.recruitment <= 60) %>%
+  mt_modify_filter_samples(Age.at.recruitment >= 40) %>%
+  mt_modify_filter_samples(Sex == "Male")
+colData(D2)$is_ref <- colData(D2)$eid %in% colData(uniform_biobank)$eid
 
-patientInfo <- colData(D2)
 
-# 85/15 train/test split
-data.matrix <- as.data.frame(t(assay(D2)))
+# Adni minimum age is 54
+colData(adni)$SC_Age[grepl(">89", colData(adni)$SC_Age, fixed=TRUE)] <- "90"
+colData(adni)$SC_Age <- as.numeric(colData(adni)$SC_Age)
+uniform_adni <- adni %>%
+    mt_modify_filter_samples(SC_Age <= 70) %>%
+    mt_modify_filter_samples(SC_Age >= 50) %>%
+    mt_modify_filter_samples(PTGENDER == 1)  # 1 is male
+colData(adni)$is_ref <- colData(adni)$Sample_id %in% colData(uniform_adni)$Sample_id
 
-colnames(data.matrix) <- fields
-data.matrix$eid <- patientInfo$eid
+# Tulsa minimum age is 18
+uniform_tulsa <- tulsa %>%
+    mt_modify_filter_samples(Age <= 40) %>%
+    mt_modify_filter_samples(Age >= 20) %>%
+    mt_modify_filter_samples(Gender == "Male")
+colData(tulsa)$is_ref <- colData(tulsa)$Sample_id %in% colData(uniform_tulsa)$Sample_id
 
-training.set <- sample_frac(data.matrix, 0.85)
-testing.set <- data.matrix[which(!(rownames(data.matrix) %in% rownames(training.set))),]
+D2 %>%
+  mt_pre_trans_scale(ref_samples=is_ref) %>%
+  mt_write_se_xls("data/BioBank_norm.xlsx")
 
-eids <- c(training.set$eid, testing.set$eid)
-training.set <- select(training.set, -eid)
-testing.set <- select(testing.set, -eid)
+adni %>%
+  mt_pre_trans_scale(ref_samples=is_ref) %>%
+  mt_write_se_xls("data/ADNI_norm.xlsx")
 
-training.set.nona <- data.frame(training.set)
-testing.set.nona <- data.frame(testing.set)
-
-if (RANDOM_NA) {
-  for (column in 1:ncol(data.matrix)) {
-    training.set[sample(1:nrow(training.set), as.integer(.15*nrow(training.set))),column] <- NA
-    testing.set[sample(1:nrow(testing.set), as.integer(.15*nrow(testing.set))),column] <- NA
-  }
-  training.col.remove <- which(colMeans(is.na(training.set)) > .4)
-  testing.col.remove <- which(colMeans(is.na(testing.set)) > .4)
-
-  if (length(training.col.remove) > 0) {
-    for (column in training.col.remove) {
-      na.rows <- which(is.na(training.set[,column]))
-      to.replace <- sample(na.rows, as.integer(0.6*length(na.rows)))
-      training.set[to.replace,column] <- training.set.nona[to.replace,column]
-    }
-  }
-
-  if (length(testing.col.remove) > 0) {
-    for (column in testing.col.remove) {
-      na.rows <- which(is.na(testing.set[,column]))
-      to.replace <- sample(na.rows, as.integer(0.6*length(na.rows)))
-      testing.set[to.replace,column] <- testing.set.nona[to.replace,column]
-    }
-  }
-
-  training.remove <- which(rowMeans(is.na(training.set)) > .4)
-  testing.remove <- which(rowMeans(is.na(training.set)) > .4)
-
-  if (length(training.remove) > 0) {
-    for (row in training.remove) {
-      na.cols <- which(is.na(training.set[row,]))
-      to.replace <- sample(na.cols, as.integer(0.6*length(na.cols)))
-      training.set[row,to.replace] <- training.set.nona[row,to.replace]
-    }
-  }
-
-  if (length(testing.remove) > 0) {
-    for (row in testing.remove) {
-      na.cols <- which(is.na(testing.set[row,]))
-      to.replace <- sample(na.cols, as.integer(0.6*length(na.cols)))
-      testing.set[row,to.replace] <- testing.set.nona[row,to.replace]
-    }
-  }
-}
-
-write_xlsx(
-  x = list(`Training Set`=training.set,
-           `Testing Set`=testing.set,
-           `Training Set No NA`=training.set.nona,
-           `Testing Set No NA`=testing.set.nona,
-           `Metabolite Annotations`=metaDf,
-           `Patient Information`=inner_join(data.frame(eid=eids), as.data.frame(patientInfo), by = "eid") %>% as.data.frame()),
-  path = if (RANDOM_NA) { "data/BioBank_NA.xlsx" } else { "data/BioBank.xlsx" },
-  use_zip64 = TRUE
-)
+tulsa %>%
+  mt_pre_trans_scale(ref_samples=is_ref) %>%
+  mt_write_se_xls("data/Tulsa_norm.xlsx")

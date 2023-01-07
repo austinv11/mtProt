@@ -103,9 +103,7 @@ class VariationalEncoder(nn.Module):
 class MtEncoder(pl.LightningModule):
 
     def __init__(self,
-                 num_input: int,
                  input_names: list[str],
-                 num_output: int,
                  output_names: list[str],
                  lr: float = 1e-3,
                  momentum: float = 0.0,
@@ -122,6 +120,9 @@ class MtEncoder(pl.LightningModule):
                  loss_scheduler: MultiTaskLossScheduler = AutoEncoderLossOnly(),
                  ):
         super().__init__()
+
+        num_input = len(input_names)
+        num_output = len(output_names)
 
         self.activation = activation
         self.loss_scheduler = loss_scheduler
@@ -167,6 +168,7 @@ class MtEncoder(pl.LightningModule):
                 input_size=linear_layer_latent,
                 latent_size=latent_size
             )
+            # Strip the last two layers of the encoder (
             self._init_weights(self.vae_module)
 
         self.decoder = self._make_decoder(
