@@ -6,6 +6,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Learning
 from pytorch_lightning.loggers import WandbLogger
 
 from datasets import NightingaleDataModule
+from losses import RegressionLossOnly
 from models import MtEncoder
 
 default_config = dict(
@@ -94,7 +95,7 @@ def run_model(
         accelerator=accelerator,
         devices=1,
         auto_select_gpus=True,
-        max_epochs=75,
+        max_epochs=200,
         enable_checkpointing=not in_sweep,
         default_root_dir='checkpoints/autoencoder',
         callbacks=callbacks,
@@ -118,7 +119,8 @@ def run_model(
         optimizer=optimizer,
         encoder_type=autoencoder_type,
         dropout=dropout,
-        corruption_prob=corruption_prob
+        corruption_prob=corruption_prob,
+        loss_scheduler=RegressionLossOnly(),
     )
 
     wandb_logger.watch(model, log_freq=50)

@@ -5,7 +5,7 @@ project: mtProt
 
 name: VAE
 
-method: bayes  # TODO: bayes with smaller search space
+method: bayes
 
 metric:
   name: val_loss
@@ -23,25 +23,14 @@ parameters:
     value: 'vae'
 
   optimizer:
-    distribution: categorical
-    values:
-      - adamw # Best loss
-      #- adam
-      - sgd
-      #- adamax # Performs poorly
-      - radam
-      #- rmsprop
+    distribution: constant
+    value: adamw # Best loss
 
   # higher = worse loss
   weight_decay:
     distribution: categorical
     values:
-      - 0
-      #- 0.001
-      #- 0.01
       - 0.1
-      #- 0.25
-      #- 0.5
       - 0.9
 
   # higher = better loss
@@ -55,13 +44,11 @@ parameters:
     values:
       - relu
       - leaky_relu
-      - gelu
-      #- selu # Performs poorly
 
   learning_rate:
     distribution: categorical
     values:
-      #- 0.00001
+      - 0.00001
       - 0.0001
       - 0.001
       - 0.01
@@ -69,55 +56,39 @@ parameters:
 
   # Enabled = better loss
   amsgrad:
-    distribution: int_uniform
-    min: 0
-    max: 1
+    distribution: constant
+    value: 1
 
   # higher = worse loss
   dropout:
-    distribution: categorical
-    values:
-      - 0.0
-      - 0.1
-      - 0.25
+    distribution: constant
+    value: 0.1
 
   # Enabled is worse loss
   swa_enabled:
-    distribution: int_uniform
-    min: 0
-    max: 1
+    distribution: constant
+    value: 0
 
   # Higher values = better loss
   swa_lr:
-    distribution: categorical
-    values:
-      - 0.001
-      - 0.01
-      - 0.1
+    distribution: constant
+    value: 0
 
   # higher = better loss
   momentum:
-    distribution: categorical
-    values:
-      - 0.0
-      - 0.9
-      - 0.99
-      - 0.999
+    distribution: constant
+    value: 0.99
 
   num_layers:
-    distribution: int_uniform
-    min: 1
-    max: 3
+    distribution: constant
+    value: 2
 
   latent_size: # Higher = worse loss
     distribution: int_uniform
     min: 4
-    max: 32
+    max: 20
 
   # lower = better loss
   corruption_prob:
-    distribution: categorical
-    values:
-      - 0
-      - 0.1
-      - 0.2
+    distribution: constant
+    value: 0.1

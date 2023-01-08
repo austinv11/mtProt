@@ -1,4 +1,3 @@
-import os
 from typing import Tuple, List
 
 import pandas as pd
@@ -21,6 +20,13 @@ class PandasDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx, :], self.y[idx, :]
 
+    def filter_columns(self, cols_to_keep: List[str]):
+        self.x = self.x[:, [self.x_labels.index(col) for col in cols_to_keep if col in self.x_labels]]
+        self.x_labels = cols_to_keep
+
+        self.y = self.y[:, [self.y_labels.index(col) for col in cols_to_keep if col in self.y_labels]]
+        self.y_labels = cols_to_keep
+
 
 def load_summarized_experiment(feature_cols: List[str],
                                target_cols: List[str],
@@ -28,7 +34,12 @@ def load_summarized_experiment(feature_cols: List[str],
                                experiment: str) -> Tuple[int, PandasDataset]:
     assay = pd.read_excel(file, engine="openpyxl", sheet_name="assay")
     assay = assay.set_index(assay.columns.values[0]).T
+    assay.columns = assay.columns.str.lower()
     # Assay now has rows representing individuals and columns representing metabolites
+
+    # Filter out missing columns
+    feature_cols = [col for col in feature_cols if col in assay.columns]
+    target_cols = [col for col in target_cols if col in assay.columns]
 
     # Add indicator for experiment
     assay["experiment"] = experiment
@@ -41,11 +52,11 @@ def load_summarized_experiment(feature_cols: List[str],
     #rowData = rowData.set_index(rowData.columns.values[0])
 
     # Metadata for each individual
-    colData = pd.read_excel(file, engine="openpyxl", sheet_name="colData")
-    colData = colData.set_index(colData.columns.values[0])
+    #colData = pd.read_excel(file, engine="openpyxl", sheet_name="colData")
+    #colData = colData.set_index(colData.columns.values[0])
 
     # Add subject identifiers
-    assay["subject"] = colData.index.values
+    assay["subject"] = [f"{experiment}_{i}" for i in assay.index.values]  #colData.index.values
     assay = assay.set_index("subject")
 
     return assay.shape[0], PandasDataset(assay[feature_cols], assay[target_cols])
@@ -53,19 +64,19 @@ def load_summarized_experiment(feature_cols: List[str],
 
 def adni_data(feature_cols: List[str],
               target_cols: List[str],
-              filepath: str = "data/Neuro-Datasets/ADNI_Nightingale_Baseline_preprocessed.xlsx") -> Tuple[int, PandasDataset]:
+              filepath: str = "data/ADNI_norm.xlsx") -> Tuple[int, PandasDataset]:
     return load_summarized_experiment(feature_cols, target_cols, filepath, "ADNI")
 
 
 def tulsa_data(feature_cols: List[str],
                target_cols: List[str],
-               filepath: str = "data/Neuro-Datasets/Tulsa_Nightingale_Preprocessed.xlsx") -> Tuple[int, PandasDataset]:
+               filepath: str = "data/Tulsa_norm.xlsx") -> Tuple[int, PandasDataset]:
     return load_summarized_experiment(feature_cols, target_cols, filepath, "Tulsa")
 
 
 def biobank_data(feature_cols: List[str],
                  target_cols: List[str],
-                 filepath: str = "data/BioBank_export.xlsx") -> Tuple[int, PandasDataset]:
+                 filepath: str = "data/BioBank_norm.xlsx") -> Tuple[int, PandasDataset]:
     return load_summarized_experiment(feature_cols, target_cols, filepath, "UK_BioBank")
 
 
@@ -87,37 +98,15 @@ class NightingaleDataModule(pl.LightningDataModule):
         self.pseudo_targets = pseudo_targets
         self.meta_filepath = meta_filepath
         self.generator = torch.Generator().manual_seed(generator_seed)
-        self.base_file = f"data_cache/{self.train_proportion}_{self.val_proportion}_{self.pseudo_targets}_"
-        self.train_file_format = self.base_file + "{}_train_dataset.pt"
-        self.val_file_format = self.base_file + "{}_val_dataset.pt"
-        self.test_file_format = self.base_file + "{}_test_dataset.pt"
 
     def prepare_data(self):
-        if not os.path.exists("data_cache"):
-            os.mkdir("data_cache")
-
-        adni_train_file, adni_val_file, adni_test_file = self.train_file_format.format("adni"), self.val_file_format.format("adni"), self.test_file_format.format("adni")
-        tulsa_train_file, tulsa_val_file, tulsa_test_file = self.train_file_format.format("tulsa"), self.val_file_format.format("tulsa"), self.test_file_format.format("tulsa")
-        biobank_train_file, biobank_val_file, biobank_test_file = self.train_file_format.format("biobank"), self.val_file_format.format("biobank"), self.test_file_format.format("biobank")
-
-        if all((os.path.exists(adni_train_file),
-                os.path.exists(adni_val_file),
-                os.path.exists(adni_test_file),
-                os.path.exists(tulsa_train_file),
-                os.path.exists(tulsa_val_file),
-                os.path.exists(tulsa_test_file),
-                os.path.exists(biobank_train_file),
-                os.path.exists(biobank_val_file),
-                os.path.exists(biobank_test_file))):
-            return
-
         nightengale_metadata = pd.read_excel(self.meta_filepath, engine="openpyxl",
                                              sheet_name="Table S1", skiprows=2)
         nightengale_metadata = nightengale_metadata.drop(
-            columns=["Biomarker", "Units", "Group", "Sub-group", "UKB Field ID", "QC Flag Field ID"])
+            columns=["Description", "Units", "Group", "Sub-group", "UKB Field ID", "QC Flag Field ID"])
         nightengale_metadata = nightengale_metadata.rename(columns={"Biomarker": "metabolite"})
 
-        non_derived_metabolites = nightengale_metadata[nightengale_metadata["Type"] == "Non-derived"]["metabolite"].values.tolist()
+        non_derived_metabolites = [m.lower() for m in nightengale_metadata[nightengale_metadata["Type"] == "Non-derived"]["metabolite"].values.tolist()]
 
         if self.pseudo_targets:
             # Randomly select metabolites to be targets
@@ -132,78 +121,48 @@ class NightingaleDataModule(pl.LightningDataModule):
         tulsa_size, tulsa = tulsa_data(non_derived_metabolites, targets)
         biobank_size, biobank = biobank_data(non_derived_metabolites, targets)
 
+        all_columns = (set(adni.x_labels) | set(adni.y_labels)) & (set(tulsa.x_labels) | set(tulsa.y_labels)) & (set(biobank.x_labels) | set(biobank.y_labels))
+        adni.filter_columns(all_columns)
+        tulsa.filter_columns(all_columns)
+        biobank.filter_columns(all_columns)
+
+        self.feature_names = biobank.x_labels
+        self.target_names = biobank.y_labels
+
         adni_train_size = int(adni_size * self.train_proportion)
-        adni_train, adni_test = random_split(adni, generator=self.generator,
+        adni_train, self.adni_test_data = random_split(adni, generator=self.generator,
                                              lengths=[adni_train_size, adni_size - adni_train_size])
 
         tulsa_train_size = int(tulsa_size * self.train_proportion)
-        tulsa_train, tulsa_test = random_split(tulsa, generator=self.generator,
+        tulsa_train, self.tulsa_test_data = random_split(tulsa, generator=self.generator,
                                                lengths=[tulsa_train_size, tulsa_size - tulsa_train_size])
 
         biobank_train_size = int(biobank_size * self.train_proportion)
-        biobank_train, biobank_test = random_split(biobank, generator=self.generator,
+        biobank_train, self.biobank_test_data = random_split(biobank, generator=self.generator,
                                                    lengths=[biobank_train_size, biobank_size - biobank_train_size])
 
         adni_val_size = int(adni_train_size * self.val_proportion)
         adni_train_size = adni_train_size - adni_val_size
-        adni_train, adni_val = random_split(adni_train, generator=self.generator,
+        self.adni_train_data, self.adni_val_data = random_split(adni_train, generator=self.generator,
                                             lengths=[adni_train_size, adni_val_size])
 
         tulsa_val_size = int(tulsa_train_size * self.val_proportion)
         tulsa_train_size = tulsa_train_size - tulsa_val_size
-        tulsa_train, tulsa_val = random_split(tulsa_train, generator=self.generator,
+        self.tulsa_train_data, self.tulsa_val_data = random_split(tulsa_train, generator=self.generator,
                                               lengths=[tulsa_train_size, tulsa_val_size])
 
         biobank_val_size = int(biobank_train_size * self.val_proportion)
         biobank_train_size = biobank_train_size - biobank_val_size
-        biobank_train, biobank_val = random_split(biobank_train, generator=self.generator,
+        self.biobank_train_data, self.biobank_val_data = random_split(biobank_train, generator=self.generator,
                                                   lengths=[biobank_train_size, biobank_val_size])
 
-        # Save the datasets
-        torch.save(adni_train, adni_train_file)
-        torch.save(adni_val, adni_val_file)
-        torch.save(adni_test, adni_test_file)
-
-        torch.save(tulsa_train, tulsa_train_file)
-        torch.save(tulsa_val, tulsa_val_file)
-        torch.save(tulsa_test, tulsa_test_file)
-
-        torch.save(biobank_train, biobank_train_file)
-        torch.save(biobank_val, biobank_val_file)
-        torch.save(biobank_test, biobank_test_file)
 
     def setup(self, stage: str = None):
         if stage is None or stage == "fit":
-            adni_train_file = self.train_file_format.format("adni")
-            tulsa_train_file = self.train_file_format.format("tulsa")
-            biobank_train_file = self.train_file_format.format("biobank")
-
-            adni_val_file = self.val_file_format.format("adni")
-            tulsa_val_file = self.val_file_format.format("tulsa")
-            biobank_val_file = self.val_file_format.format("biobank")
-
-            self.adni_train_data = torch.load(adni_train_file)
-            self.tulsa_train_data = torch.load(tulsa_train_file)
-            self.biobank_train_data = torch.load(biobank_train_file)
-
-            self.adni_val_data = torch.load(adni_val_file)
-            self.tulsa_val_data = torch.load(tulsa_val_file)
-            self.biobank_val_data = torch.load(biobank_val_file)
-
-            self.feature_names = self.biobank_train_data.x_labels
-            self.target_names = self.biobank_train_data.y_labels
+            return
 
         if stage == "test":
-            adni_test_file = self.test_file_format.format("adni")
-            tulsa_test_file = self.test_file_format.format("tulsa")
-            biobank_test_file = self.test_file_format.format("biobank")
-
-            self.adni_test_data = torch.load(adni_test_file)
-            self.tulsa_test_data = torch.load(tulsa_test_file)
-            self.biobank_test_data = torch.load(biobank_test_file)
-
-            self.feature_names = self.biobank_test_data.x_labels
-            self.target_names = self.biobank_test_data.y_labels
+            return
 
         raise ValueError(f"Invalid stage: {stage}")
 
@@ -266,3 +225,11 @@ class NightingaleDataModule(pl.LightningDataModule):
 
         # Consider every datapoint exactly once
         return ChainDataset([adni_test_loader, tulsa_test_loader, biobank_test_loader])
+
+
+if __name__ == "__main__":
+    dataset = NightingaleDataModule(
+        on_gpu=False,
+        pseudo_targets=False
+    )
+    dataset.prepare_data()

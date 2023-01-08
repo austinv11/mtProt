@@ -18,6 +18,12 @@ class AutoEncoderLossOnly(MultiTaskLossScheduler):
         return ae_loss
 
 
+class RegressionLossOnly(MultiTaskLossScheduler):
+
+    def loss(self, epoch: int, max_epochs: int, ae_loss: torch.Tensor, regression_loss: torch.Tensor) -> torch.Tensor:
+        return regression_loss
+
+
 class SumLoss(MultiTaskLossScheduler):
 
     def __init__(self, ae_loss_weight=1.0, regression_loss_weight=1.0):
