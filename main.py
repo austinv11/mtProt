@@ -85,7 +85,7 @@ def run_model(
     dataset = NightingaleDataModule(
         on_gpu=accelerator == 'gpu',
         batch_size=batch_size,
-        pseudo_targets=False
+        pseudo_targets=True
     )
     dataset.prepare_data()
     dataset.setup(stage='fit')
