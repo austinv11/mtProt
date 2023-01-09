@@ -345,7 +345,7 @@ class MtEncoder(pl.LightningModule):
                                  columns=["feature", "r2"])
         return total_loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx, dataset_idx=0):
         loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
@@ -356,7 +356,7 @@ class MtEncoder(pl.LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataset_idx=0):
         if self.trainer.global_step == 0:
             wandb.define_metric('val_autoencoder_r2', summary='last')
             wandb.define_metric('val_regression_r2', summary='last')
@@ -382,7 +382,7 @@ class MtEncoder(pl.LightningModule):
 
         return loss
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataset_idx=0):
         if self.trainer.global_step == 0:
             wandb.define_metric('test_autoencoder_r2', summary='last')
             wandb.define_metric('test_regression_r2', summary='last')

@@ -189,17 +189,17 @@ class NightingaleDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         adni_val_loader = DataLoader(self.adni_val_data,
                                      batch_size=self.batch_size,
-                                     shuffle=True,
+                                     shuffle=False,
                                      pin_memory=self.on_gpu,
                                      num_workers=2 if self.on_gpu else 0)
         tulsa_val_loader = DataLoader(self.tulsa_val_data,
                                       batch_size=self.batch_size,
-                                      shuffle=True,
+                                      shuffle=False,
                                       pin_memory=self.on_gpu,
                                       num_workers=2 if self.on_gpu else 0)
         biobank_val_loader = DataLoader(self.biobank_val_data,
                                         batch_size=self.batch_size,
-                                        shuffle=True,
+                                        shuffle=False,
                                         pin_memory=self.on_gpu,
                                         num_workers=2 if self.on_gpu else 0)
 
