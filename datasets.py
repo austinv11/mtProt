@@ -1,9 +1,10 @@
-from typing import Tuple, List
+from typing import Tuple, List, Iterator
 
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import Dataset, random_split, DataLoader, ChainDataset
+from torch.utils.data import Dataset, random_split, DataLoader, ChainDataset, IterableDataset
+from torch.utils.data.dataset import T_co, ConcatDataset
 
 
 class PandasDataset(Dataset):
@@ -209,24 +210,12 @@ class NightingaleDataModule(pl.LightningDataModule):
         return [adni_val_loader, tulsa_val_loader, biobank_val_loader]
 
     def test_dataloader(self):
-        adni_test_loader = DataLoader(self.adni_test_data,
-                                      batch_size=self.batch_size,
-                                      shuffle=False,
-                                      pin_memory=self.on_gpu,
-                                      num_workers=2 if self.on_gpu else 0)
-        tulsa_test_loader = DataLoader(self.tulsa_test_data,
-                                       batch_size=self.batch_size,
-                                       shuffle=False,
-                                       pin_memory=self.on_gpu,
-                                       num_workers=2 if self.on_gpu else 0)
-        biobank_test_loader = DataLoader(self.biobank_test_data,
-                                         batch_size=self.batch_size,
-                                         shuffle=False,
-                                         pin_memory=self.on_gpu,
-                                         num_workers=2 if self.on_gpu else 0)
-
         # Consider every datapoint exactly once
-        return ChainDataset([adni_test_loader, tulsa_test_loader, biobank_test_loader])
+        return DataLoader(ConcatDataset([self.adni_test_data, self.tulsa_test_data, self.biobank_test_data]),
+                          batch_size=self.batch_size,
+                          shuffle=False,
+                          pin_memory=self.on_gpu,
+                          num_workers=2 if self.on_gpu else 0)
 
 
 if __name__ == "__main__":

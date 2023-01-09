@@ -62,7 +62,7 @@ def run_model(
 
     if not in_sweep:  # Sweeps use hyperband, so we don't need early stopping
         callbacks.append(EarlyStopping(
-            monitor="val_loss",
+            monitor="train_loss",
             mode="min",
             patience=5,
             verbose=True,
@@ -100,7 +100,7 @@ def run_model(
         callbacks=callbacks,
         gradient_clip_val=1.0,
         detect_anomaly=False,
-        fast_dev_run=False,
+        fast_dev_run=accelerator == 'cpu',
         multiple_trainloader_mode='max_size_cycle',  # 'max_size_cycle' or 'min_size', max_size_cycle = re-iterate over smaller data loaders, min_size = stop when smallest data loader is exhausted
     )
 
@@ -133,7 +133,7 @@ def run_model(
 
     print("=====TESTING=====")
     dataset.setup(stage='test')
-    trainer.test(model, ckpt_path="best" if not in_sweep else None, datamodule=dataset)
+    trainer.test(model, ckpt_path="best" if not in_sweep and accelerator != 'cpu' else None, datamodule=dataset)
 
 
 def sweep_func():
@@ -187,8 +187,9 @@ def main():
         exit()
     # TODO: create a scheduler for creating a downstream prediction task loss
     #os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # For debugging errors
-    run_model(accelerator='cpu', in_sweep=False, autoencoder_type='vae')
+    run_model(accelerator='gpu', in_sweep=False, autoencoder_type='vae')
 
 
 if __name__ == "__main__":
-    main()
+    run_model(accelerator='cpu', in_sweep=False, autoencoder_type='vae')
+#    main()

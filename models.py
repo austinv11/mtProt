@@ -361,7 +361,6 @@ class MtEncoder(pl.LightningModule):
                     y = torch.cat((y, y_), dim=0)
             batch = (x, y)
 
-        print(dataset_idx)
         loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
