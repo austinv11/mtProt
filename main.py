@@ -191,5 +191,5 @@ def main():
 
 
 if __name__ == "__main__":
-    run_model(accelerator='cpu', in_sweep=False, autoencoder_type='vae')
-#    main()
+#    run_model(accelerator='cpu', in_sweep=False, autoencoder_type='vae')
+    main()
