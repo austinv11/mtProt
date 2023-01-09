@@ -34,8 +34,14 @@ def load_summarized_experiment(feature_cols: List[str],
                                experiment: str) -> Tuple[int, PandasDataset]:
     assay = pd.read_excel(file, engine="openpyxl", sheet_name="assay")
     assay = assay.set_index(assay.columns.values[0]).T
-    assay.columns = assay.columns.str.lower()
     # Assay now has rows representing individuals and columns representing metabolites
+
+    # Metadata for each metabolite
+    rowData = pd.read_excel(file, engine="openpyxl", sheet_name="rowData")
+    rowData = rowData.set_index(rowData.columns.values[0])
+
+    column_to_select = "Biomarker_name" if "Biomarker_name" in rowData.columns.values else "title"
+    assay.columns = [c.replace(" ", "_").replace("-", "_").replace("(", "").replace(")", "").lower() for c in rowData[column_to_select].values]
 
     # Filter out missing columns
     feature_cols = [col for col in feature_cols if col in assay.columns]
@@ -46,10 +52,6 @@ def load_summarized_experiment(feature_cols: List[str],
 
     # Add zeros to allow for ignoring targets
     assay["zero"] = 0.0
-
-    # Metadata for each metabolite
-    #rowData = pd.read_excel(file, engine="openpyxl", sheet_name="rowData")
-    #rowData = rowData.set_index(rowData.columns.values[0])
 
     # Metadata for each individual
     #colData = pd.read_excel(file, engine="openpyxl", sheet_name="colData")
@@ -103,10 +105,10 @@ class NightingaleDataModule(pl.LightningDataModule):
         nightengale_metadata = pd.read_excel(self.meta_filepath, engine="openpyxl",
                                              sheet_name="Table S1", skiprows=2)
         nightengale_metadata = nightengale_metadata.drop(
-            columns=["Description", "Units", "Group", "Sub-group", "UKB Field ID", "QC Flag Field ID"])
-        nightengale_metadata = nightengale_metadata.rename(columns={"Biomarker": "metabolite"})
+            columns=["Units", "Group", "Sub-group", "UKB Field ID", "QC Flag Field ID"])
+        nightengale_metadata = nightengale_metadata.rename(columns={"Description": "metabolite"})
 
-        non_derived_metabolites = [m.lower() for m in nightengale_metadata[nightengale_metadata["Type"] == "Non-derived"]["metabolite"].values.tolist()]
+        non_derived_metabolites = [m.replace(" ", "_").replace("-", "_").replace("(", "").replace(")", "").lower() for m in nightengale_metadata[nightengale_metadata["Type"] == "Non-derived"]["metabolite"].values.tolist()]
 
         if self.pseudo_targets:
             # Randomly select metabolites to be targets

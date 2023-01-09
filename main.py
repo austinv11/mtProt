@@ -67,7 +67,6 @@ def run_model(
             patience=5,
             verbose=True,
             check_on_train_epoch_end=True,
-            check_finite=True
         ))
         checkpoint_callback = ModelCheckpoint(
             dirpath="checkpoints/autoencoder",
@@ -188,7 +187,7 @@ def main():
         exit()
     # TODO: create a scheduler for creating a downstream prediction task loss
     #os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # For debugging errors
-    run_model(accelerator='gpu', in_sweep=False, autoencoder_type='vae')
+    run_model(accelerator='cpu', in_sweep=False, autoencoder_type='vae')
 
 
 if __name__ == "__main__":

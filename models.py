@@ -192,7 +192,9 @@ class MtEncoder(pl.LightningModule):
         self._init_weights(self.regression_decoder)
 
         # Metrics
-        self.r2_score = torchmetrics.R2Score(num_outputs=num_input,
+        self.r2_score_in = torchmetrics.R2Score(num_outputs=num_input,
+                                             multioutput="raw_values")
+        self.r2_score_out = torchmetrics.R2Score(num_outputs=num_output,
                                              multioutput="raw_values")
         self.mse_score = torchmetrics.MeanSquaredError()
         self.feature_names = input_names
@@ -335,8 +337,8 @@ class MtEncoder(pl.LightningModule):
 
         total_loss = self.loss_scheduler.loss(curr_epoch, max_epochs, autoencoder_loss, regression_loss)
 
-        autoencoder_r2 = self.r2_score(x_hat, x_orig)
-        regression_r2 = self.r2_score(y_hat, y)
+        autoencoder_r2 = self.r2_score_in(x_hat, x_orig)
+        regression_r2 = self.r2_score_out(y_hat, y)
         autoencoder_mse = self.mse_score(x_hat, x_orig)
         regression_mse = self.mse_score(y_hat, y)
         autoencoder_r2_table = wandb.Table(data=[[feat, r2_val] for (feat, r2_val) in zip(self.feature_names, autoencoder_r2)],
@@ -345,7 +347,21 @@ class MtEncoder(pl.LightningModule):
                                  columns=["feature", "r2"])
         return total_loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table
 
-    def training_step(self, batch, batch_idx, dataset_idx=0):
+    def training_step(self, batch, batch_idx, dataset_idx=None):
+        if type(batch) == list and type(batch[0]) == list:
+            x = None
+            y = None
+            for dataset in batch:
+                x_, y_ = dataset
+                if x is None:
+                    x = x_
+                    y = y_
+                else:
+                    x = torch.cat((x, x_), dim=0)
+                    y = torch.cat((y, y_), dim=0)
+            batch = (x, y)
+
+        print(dataset_idx)
         loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch, is_training=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False)
@@ -356,10 +372,23 @@ class MtEncoder(pl.LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx, dataset_idx=0):
+    def validation_step(self, batch, batch_idx, dataset_idx=None):
         if self.trainer.global_step == 0:
             wandb.define_metric('val_autoencoder_r2', summary='last')
             wandb.define_metric('val_regression_r2', summary='last')
+
+        if type(batch) == list and type(batch[0]) == list:
+            x = None
+            y = None
+            for dataset in batch:
+                x_, y_ = dataset
+                if x is None:
+                    x = x_
+                    y = y_
+                else:
+                    x = torch.cat((x, x_), dim=0)
+                    y = torch.cat((y, y_), dim=0)
+            batch = (x, y)
 
         loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch)
 
@@ -382,10 +411,23 @@ class MtEncoder(pl.LightningModule):
 
         return loss
 
-    def test_step(self, batch, batch_idx, dataset_idx=0):
+    def test_step(self, batch, batch_idx, dataset_idx=None):
         if self.trainer.global_step == 0:
             wandb.define_metric('test_autoencoder_r2', summary='last')
             wandb.define_metric('test_regression_r2', summary='last')
+
+        if type(batch) == list and type(batch[0]) == list:
+            x = None
+            y = None
+            for dataset in batch:
+                x_, y_ = dataset
+                if x is None:
+                    x = x_
+                    y = y_
+                else:
+                    x = torch.cat((x, x_), dim=0)
+                    y = torch.cat((y, y_), dim=0)
+            batch = (x, y)
 
         loss, autoencoder_loss, regression_loss, autoencoder_mse, autoencoder_r2_table, regression_mse, regression_r2_table = self.process_batch(batch)
 
