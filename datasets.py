@@ -22,10 +22,10 @@ class PandasDataset(Dataset):
 
     def filter_columns(self, cols_to_keep: List[str]):
         self.x = self.x[:, [self.x_labels.index(col) for col in cols_to_keep if col in self.x_labels]]
-        self.x_labels = cols_to_keep
+        self.x_labels = [x for x in self.x_labels if x in cols_to_keep]
 
         self.y = self.y[:, [self.y_labels.index(col) for col in cols_to_keep if col in self.y_labels]]
-        self.y_labels = cols_to_keep
+        self.y_labels = [y for y in self.y_labels if y in cols_to_keep]
 
 
 def load_summarized_experiment(feature_cols: List[str],
