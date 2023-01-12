@@ -1,5 +1,6 @@
 import os.path as osp
 
+import losses
 import wandb
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, StochasticWeightAveraging
@@ -119,7 +120,7 @@ def run_model(
         encoder_type=autoencoder_type,
         dropout=dropout,
         corruption_prob=corruption_prob,
-        loss_scheduler=RegressionLossOnly(),
+        loss_scheduler=losses.SumLoss(),
     )
 
     wandb_logger.watch(model, log_freq=50)
