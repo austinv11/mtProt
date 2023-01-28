@@ -36,8 +36,8 @@ class SumLoss(MultiTaskLossScheduler):
 
 class IntersectingLoss(MultiTaskLossScheduler):
 
-    def __init__(self, vae_warmup_epochs: int, freeze_after_epochs: int = None, min_regression_weight: float = 0, max_regression_weight: float = 1):
-        self.vae_warmup_epochs = vae_warmup_epochs  # Only consider VAE loss for the first few epochs
+    def __init__(self, warmup_epochs: int, freeze_after_epochs: int = None, min_regression_weight: float = 0, max_regression_weight: float = 1):
+        self.vae_warmup_epochs = warmup_epochs  # Only consider AE loss for the first few epochs
         self.freeze_after_epochs = freeze_after_epochs  # Stop modifying loss formula after these epochs
         self.min_regression_weight = min_regression_weight  # Min and max weight for the regression loss
         self.max_regression_weight = max_regression_weight

@@ -1,13 +1,12 @@
 import os.path as osp
 
-import losses
 import wandb
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor, StochasticWeightAveraging
 from pytorch_lightning.loggers import WandbLogger
 
+import losses
 from datasets import NightingaleDataModule
-from losses import RegressionLossOnly
 from models import MtEncoder
 
 default_config = dict(
@@ -120,7 +119,7 @@ def run_model(
         encoder_type=autoencoder_type,
         dropout=dropout,
         corruption_prob=corruption_prob,
-        loss_scheduler=losses.SumLoss(),
+        loss_scheduler=losses.IntersectingLoss(warmup_epochs=10)  # losses.SumLoss(),
     )
 
     wandb_logger.watch(model, log_freq=50)
